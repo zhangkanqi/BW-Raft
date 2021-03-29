@@ -1,2 +1,2 @@
 # BW-Raft
-Implement Raft and BW-Raft（Supporting Byzantine Fault Tolerance）
+Implement distributed consensus protocol Raft and it's expanded version BW-Raft（Supporting Byzantine Fault Tolerance）
