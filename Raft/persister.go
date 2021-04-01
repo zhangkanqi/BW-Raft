@@ -13,6 +13,7 @@ type Persister struct {
 
 func (p *Persister) Init(path string) {
 	var err error
+	p.path = path
 	p.db, err = leveldb.OpenFile(path, nil)
 	if err != nil {
 		log.Fatalln(err)
@@ -26,15 +27,27 @@ func (p *Persister) Put(key string, value string) {
 	}
 }
 
-func (p *Persister) Get(key string) []byte {
+func (p *Persister) Get(key string) string {
 	value, err := p.db.Get([]byte(key), nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	return value
+	return string(value)
 }
 
 func (p *Persister) PrintStrVal(key string) {
 	value := p.Get(key)
-	fmt.Println(string(value))
+	fmt.Println(value)
 }
+
+// Test leveldb
+//func main() {
+//	p := &Persister{}
+//	p.Init("../Raft")
+//	p.Put("1", "a")
+//	fmt.Println(p.Get("1"))
+//	err := p.db.Close()
+//	if err != nil {
+//		log.Fatalln(err)
+//	}
+//}

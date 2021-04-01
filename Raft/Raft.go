@@ -1,6 +1,9 @@
 package Raft
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 type State int
 const NULL int32 = -1
@@ -44,8 +47,24 @@ type Raft struct {
 	voteCh chan bool
 	appendLogCh chan bool
 
-
+	persist *Persister
 }
 
+func MakeRaft(address string, members []string, persist *Persister, mu *sync.Mutex) *Raft {
+	raft := &Raft{}
+	raft.address = address
+	raft.members = members
+	raft.persist = persist
+	raft.mu = mu
+	n := len(raft.members)
+	fmt.Println("所有成员地址：")
+	for i := 0; i < n; i++ {
+		fmt.Println(raft.members[i])
+	}
+	return raft
+}
 
+func (rf *Raft) init() {
+
+}
 
