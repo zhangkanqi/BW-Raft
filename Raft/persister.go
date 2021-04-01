@@ -1,4 +1,4 @@
-package Raft
+package main
 
 import (
 	"fmt"
@@ -33,6 +33,13 @@ func (p *Persister) Get(key string) string {
 		log.Fatalln(err)
 	}
 	return string(value)
+}
+
+func (p *Persister) Close()  {
+	err := p.db.Close()
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func (p *Persister) PrintStrVal(key string) {

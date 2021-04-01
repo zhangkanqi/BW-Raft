@@ -15,8 +15,8 @@ message RequestVoteReply {
 message AppendEntriesArgs {
   int32 term = 1;
   int32 leaderId = 2;
-  int32 preLogIndex = 3;
-  int32 preLogTerm = 4;
+  int32 prevLogIndex = 3;
+  int32 prevLogTerm = 4;
   bytes entries = 5;
   int32 leaderCommit = 6;
 }
