@@ -4,7 +4,7 @@
 // 	protoc        v3.14.0
 // source: Raft.proto
 
-package main
+package Raft
 
 import (
 	context "context"
