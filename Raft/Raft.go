@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 )
 
 type State int
+type IntSlice []int32
 const NULL int32 = -1
 
 const (
@@ -35,6 +37,12 @@ type Op struct {
 type Entry struct {
 	term int32
 	Command Op
+}
+
+type ApplyMsg struct {
+	CommandValid bool
+	Command      interface{}
+	CommandIndex int
 }
 
 type Raft struct {
@@ -59,6 +67,7 @@ type Raft struct {
 	heartbeatCh chan bool
 	killCh chan bool
 	beLeaderCh chan bool
+	applyCh chan ApplyMsg
 
 	persist *Persister
 }
@@ -215,6 +224,7 @@ func (rf *Raft) sendRequestVote(address string, args *RequestVoteArgs) *RequestV
 }
 
 func (rf *Raft) RequestVote(ctx context.Context, args *RequestVoteArgs) (*RequestVoteReply, error) {
+	// 方法实现端
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	reply := &RequestVoteReply{VoteGranted:false}
@@ -250,40 +260,143 @@ func (rf *Raft) startAppendEntries() {
 		}
 		rf.mu.Unlock()
 		go func(idx int) {
-			appendEntries := rf.log[rf.nextIndex[idx]:] // 刚开始是空的，为了维持自己的leader身份
-			entries, _ := json.Marshal(appendEntries) // 转码
-			args := &AppendEntriesArgs{
-				Term:          rf.currentTerm,
-				LeaderId:      rf.me,
-				PreLogIndex:   rf.getPrevLogIndex(idx),
-				PreLogTerm:    rf.getPrevLogTerm(idx),
-				Entries:       entries,
-				LeaderCommit:  rf.commitIndex,
-			}
-			reply := rf.sendAppendEntries(rf.address, args)
-			//???为什么要加这个rf.currentTerm != args.Term
-			if rf.role != Leader {
-				return
-			}
-			if reply.Term > rf.currentTerm {
-				rf.beFollower(reply.Term)
-				return
-			}
-			if reply.Success {
-				rf.matchIndex[idx] = args.PreLogIndex + len()
+			for {
+				appendEntries := rf.log[rf.nextIndex[idx]:] // 刚开始是空的，为了维持自己的leader身份
+				entries, _ := json.Marshal(appendEntries) // 转码
+				args := &AppendEntriesArgs{
+					Term:          rf.currentTerm,
+					LeaderId:      rf.me,
+					PrevLogIndex:   rf.getPrevLogIndex(idx),
+					PrevLogTerm:    rf.getPrevLogTerm(idx),
+					Entries:       entries,
+					LeaderCommit:  rf.commitIndex,
+				}
+				reply := rf.sendAppendEntries(rf.address, args)
+				//???为什么要加这个rf.currentTerm != args.Term
+				if rf.role != Leader {
+					return
+				}
+				if reply.Term > rf.currentTerm {
+					rf.beFollower(reply.Term)
+					return
+				}
+				if reply.Success {
+					rf.matchIndex[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，matchIndex=prevLogIndex
+					rf.nextIndex[idx] = rf.matchIndex[idx] + 1
+					rf.updateCommitIndex()
+					return
+				} else {
+					rf.nextIndex[idx]--
+				}
 			}
 		}(i)
 	}
 
 }
 
-func (rf *Raft) sendAppendEntries(address string, args *AppendEntriesArgs) *AppendEntriesReply {
+func (rf *Raft) sendHeartBeat() {
+	fmt.Printf("############ 发送心跳包 me:%d term:%d ############\n", rf.me, rf.currentTerm)
+	n := len(rf.members)
+	for i := 0; i < n; i++ {
+		go func(idx int) {
+			for {
+				args := &AppendEntriesArgs{
+					Term:          rf.currentTerm,
+					LeaderId:      rf.me,
+					PrevLogIndex:  rf.getPrevLogIndex(idx),
+					PrevLogTerm:   rf.getPrevLogTerm(idx),
+					Entries:       nil,
+					LeaderCommit:  rf.commitIndex,
+				}
+				reply := rf.sendAppendEntries(rf.members[idx], args)
+				if rf.role != Leader || rf.currentTerm != args.Term {
+					return
+				}
+				if reply.Term > rf.currentTerm {
+					rf.beFollower(reply.Term)
+					return
+				}
+			}
+		}(i)
+	}
+}
 
+func (rf *Raft) updateCommitIndex() {
+	n := len(rf.matchIndex)
+	copyMatchIndex := make([]int32, n)
+	copy(copyMatchIndex, rf.matchIndex)
+	sort.Sort(IntSlice(copyMatchIndex))
+	N := copyMatchIndex[n / 2] // 过半
+	if N > rf.commitIndex && rf.log[N].term == rf.currentTerm {
+		rf.commitIndex = N
+		rf.updateLastApplied()
+	}
+}
+
+func (rf *Raft) updateLastApplied() { // apply
+	for rf.lastApplied < rf.commitIndex {
+		rf.lastApplied++
+		curEntry := rf.log[rf.lastApplied]
+		cm := curEntry.Command
+		if cm.option == "Put" {
+			rf.persist.Put(cm.key, cm.value)
+		}
+		applyMsg := ApplyMsg{
+			true,
+			curEntry.Command,
+			int(rf.lastApplied),
+		}
+		rf.applyCh <- applyMsg
+	}
+}
+
+func (rf *Raft) sendAppendEntries(address string, args *AppendEntriesArgs) *AppendEntriesReply {
+	// AppendEntries RPC 的Client端
+	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
+	if err1 != nil {
+		log.Fatalln(err1)
+	}
+	defer func() {
+		err2 := conn.Close()
+		if err2 != nil {
+			log.Fatalln(err2)
+		}
+	}()
+	client := NewRaftClient(conn)
+	reply, err3 := client.AppendEntries(context.Background(), args)
+	if err3 != nil {
+		log.Fatalln(err3)
+	}
+	return reply
 }
 
 func (rf *Raft) AppendEntries(ctx context.Context, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
-
-
+	// 发送者：args-Term
+	// 接收者：rf-currentTerm
+	reply := &AppendEntriesReply{}
+	reply.Term = rf.currentTerm
+	reply.Success = false
+	if rf.currentTerm < args.Term { // 接收者发现自己的term过期了，更新term，转成follower
+		rf.beFollower(args.Term)
+	}
+	rfLogLen := int32(len(rf.log))
+	if args.Term < rf.currentTerm || rfLogLen <= args.PrevLogIndex ||
+		rfLogLen > args.PrevLogIndex && rf.log[args.PrevLogIndex].term != args.PrevLogTerm { // 返回后发送者会转变成 follower
+		return reply, nil
+	}
+	var newEntries []Entry
+	err := json.Unmarshal(args.Entries, &newEntries)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	rf.log = rf.log[:args.PrevLogIndex+1]
+	rf.log = append(rf.log, newEntries[0:]...)
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = Min(args.LeaderCommit, rf.getLastLogIndex())
+		rf.updateLastApplied()
+	}
+	reply.Success = true
+	return reply, nil
 }
 
 func (rf *Raft) registerServer(address string) {
@@ -360,3 +473,38 @@ func (rf *Raft) getPrevLogTerm(i int) int32 {
 	return rf.log[prevLogIndex].term
 }
 
+func (rf *Raft) getState() (int32, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	term := rf.currentTerm
+	isLeader := rf.role == Leader
+	return term, isLeader
+}
+
+func (s IntSlice) Len() int {
+	return len(s)
+}
+
+func (s IntSlice) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s IntSlice) Less(i, j int) bool {
+	return s[i] < s[j]
+}
+
+func Min(a, b int32) int32 {
+	if a > b {
+		return b
+	} else {
+		return a
+	}
+}
+
+func Max(a, b int32) int32 {
+	if a > b {
+		return a
+	} else {
+		return b
+	}
+}
