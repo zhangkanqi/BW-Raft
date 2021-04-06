@@ -1,1 +1,1 @@
-Implement Basic Raft Without Key-value Store.
+Implement Basic Raft With Key-value Store.
