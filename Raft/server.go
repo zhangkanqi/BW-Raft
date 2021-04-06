@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"google.golang.org/grpc"
 	"log"
 	"net"
@@ -22,11 +23,49 @@ type Server struct  {
 }
 
 func (sv *Server) WriteRequest(ctx context.Context, args *WriteArgs) (*WriteReply, error) {
-
+	reply := &WriteReply{}
+	_, reply.IsLeader = sv.rf.getState()
+	if !reply.IsLeader {
+		return reply, nil
+	}
+	originalOp := Op{
+		key:		args.Key,
+		value:		args.Value,
+		option: 	"write",
+	}
+	index, _, isLeader := sv.rf.Start(originalOp)
+	if !isLeader {
+		fmt.Println("When write, Leader change!")
+		reply.IsLeader = false
+		return reply, nil
+	}
+	apply := <- sv.applyCh
+	fmt.Printf("新指令的内容：%s, 新指令的index：%d\n", apply.Command, index)
+	reply.Success = true
+	return reply, nil
 }
 
 func (sv *Server) ReadRequest(ctx context.Context, args *ReadArgs) (*ReadReply, error) {
-
+	reply := &ReadReply{}
+	_, reply.IsLeader = sv.rf.getState()
+	if !reply.IsLeader {
+		return reply, nil
+	}
+	originalOp := Op{
+		option:		"read",
+		key:		args.Key,
+	}
+	index, _, isLeader := sv.rf.Start(originalOp)
+	if !isLeader {
+		fmt.Println("When read, Leader change!")
+		reply.IsLeader = false
+		return reply, nil
+	}
+	apply := <- sv.applyCh
+	fmt.Printf("新指令的内容：%s, 新指令的index：%d\n", apply.Command, index)
+	//读取的内容
+	fmt.Printf("读取到的内容：%s\n", sv.rf.persist.Get(args.Key))
+	return reply, nil
 }
 
 func (sv *Server) registerServer(address string) {

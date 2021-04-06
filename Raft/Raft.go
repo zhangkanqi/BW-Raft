@@ -81,6 +81,26 @@ func getMe(address string) int32 {
 	return int32(me)
 }
 
+// 新指令的index，term，isLeader
+func (rf *Raft) Start(command interface{}) (int32, int32, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	var index int32 = -1
+	term := rf.currentTerm
+	isLeader := rf.role == Leader
+	if isLeader {
+		index = rf.getLastLogIndex() + 1
+		newEntry := Entry{
+			term:    rf.currentTerm,
+			Command: command.(Op), //？
+		}
+		rf.log = append(rf.log, newEntry)
+		rf.startAppendEntries()
+	}
+	fmt.Printf("新日志的Index：%d，term：%d，内容：%s\n", index, term, command)
+	return index, term, isLeader
+}
+
 func MakeRaft(address string, members []string, persist *Persister, mu *sync.Mutex, ) *Raft {
 	raft := &Raft{}
 	raft.address = address
