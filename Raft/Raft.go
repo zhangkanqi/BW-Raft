@@ -1,4 +1,4 @@
-package Raft
+package main
 
 import (
 	"context"
@@ -81,7 +81,7 @@ func getMe(address string) int32 {
 	return int32(me)
 }
 
-func MakeRaft(address string, members []string, persist *Persister, mu *sync.Mutex) *Raft {
+func MakeRaft(address string, members []string, persist *Persister, mu *sync.Mutex, ) *Raft {
 	raft := &Raft{}
 	raft.address = address
 	raft.me = getMe(address)
@@ -229,8 +229,8 @@ func (rf *Raft) RequestVote(ctx context.Context, args *RequestVoteArgs) (*Reques
 	defer rf.mu.Unlock()
 	reply := &RequestVoteReply{VoteGranted:false}
 	reply.Term = rf.currentTerm //用于candidate更新自己的current
-	// 发送者：args-client
-	// 接收者：rf-server
+	// 发送者：args-term
+	// 接收者：rf-currentTerm
 	// ????根据下面这行代码，已投票的candidate/follower发现自己的term过时后会成为follower（清空votedFor），那之前的投票会被收回吗？
 	if rf.currentTerm < args.Term {
 		// candidate1 发送RPC到 candidate2，candidate2发现自己的term过时了，candidate2立即变成follower，再判断要不要给candidate1投票
@@ -498,13 +498,5 @@ func Min(a, b int32) int32 {
 		return b
 	} else {
 		return a
-	}
-}
-
-func Max(a, b int32) int32 {
-	if a > b {
-		return a
-	} else {
-		return b
 	}
 }
