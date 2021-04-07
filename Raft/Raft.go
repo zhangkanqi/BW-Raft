@@ -49,11 +49,12 @@ type Raft struct {
 	mu *sync.Mutex
 	me int32
 	address string
-	members []string
+	members []string //其他成员，包括自己
 	role State
 
 	currentTerm int32
 	votedFor int32
+	votes int32
 	log []Entry
 
 	commitIndex int32
@@ -101,6 +102,20 @@ func (rf *Raft) Start(command interface{}) (int32, int32, bool) {
 	return index, term, isLeader
 }
 
+func (rf *Raft) registerServer(address string) {
+	//Raft服务的Server端
+	server := grpc.NewServer()
+	RegisterRaftServer(server, rf)
+	lis, err1 := net.Listen("tcp", address)
+	if err1 != nil {
+		log.Fatalln(err1)
+	}
+	err2 := server.Serve(lis)
+	if err2 != nil {
+		log.Fatalln(err2)
+	}
+}
+
 func MakeRaft(address string, members []string, persist *Persister, mu *sync.Mutex, ) *Raft {
 	raft := &Raft{}
 	raft.address = address
@@ -113,6 +128,7 @@ func MakeRaft(address string, members []string, persist *Persister, mu *sync.Mut
 	for i := 0; i < n; i++ {
 		fmt.Println(raft.members[i])
 	}
+	raft.init()
 	return raft
 }
 
@@ -120,7 +136,7 @@ func (rf *Raft) init() {
 	rf.role = Follower
 	rf.currentTerm = 0
 	rf.votedFor = NULL
-	rf.log = make([]Entry, 1)
+	rf.log = make([]Entry, 1) // 日志索引从1开始
 	rf.commitIndex = 0
 	rf.lastApplied = 0
 
@@ -130,7 +146,7 @@ func (rf *Raft) init() {
 	rf.heartbeatCh = make(chan bool, 1)
 	rf.beLeaderCh = make(chan bool, 1)
 
-	heartbeatTime := time.Duration(20) * time.Millisecond
+	heartbeatTime := time.Duration(150) * time.Millisecond
 
 	go func() {
 		for {
@@ -140,7 +156,7 @@ func (rf *Raft) init() {
 				return
 			default:
 			}
-			electionTime := time.Duration(rand.Intn(20)+500) * time.Millisecond
+			electionTime := time.Duration(rand.Intn(350)+500) * time.Millisecond
 
 			switch rf.role {
 			case Follower:
@@ -148,26 +164,21 @@ func (rf *Raft) init() {
 				case <- rf.voteCh:
 				case <- rf.appendLogCh:
 				case <- time.After(electionTime):
-					rf.mu.Lock()
+					fmt.Printf("%d号节点没有收到心跳包，成为candidate，发起新一轮选举，旧的currentTerm=%d\n", rf.me, rf.currentTerm)
 					rf.beCandidate()
-					fmt.Printf("%d号节点选举超时，成为candidate，发起新一轮选举，currentTerm=%d\n", rf.me, rf.currentTerm)
-					rf.mu.Unlock()
 				}
 			case Candidate:
 				select {
 				case <- rf.voteCh:
 				case <- rf.appendLogCh:
 				case <- time.After(electionTime):
-				case <- rf.heartbeatCh: // 新的leader已选出
-					rf.mu.Lock()
-					rf.beFollower(rf.currentTerm)
-					fmt.Printf("新leader已经选出，%d号节点成为Follower，currentTerm=%d\n", rf.me, rf.currentTerm)
-					rf.mu.Unlock()
-				case <- rf.beLeaderCh:
-					rf.mu.Lock()
-					rf.beLeader()
-					fmt.Printf("%d号节点成为Leader，currentTerm=%d\n", rf.me, rf.currentTerm)
-					rf.mu.Unlock()
+					fmt.Printf("%d号节点选举超时，成为candidate，发起新一轮选举，旧的currentTerm=%d\n", rf.me, rf.currentTerm)
+					rf.beCandidate()
+				//case <- rf.heartbeatCh: // 新的leader已选出
+					//rf.beFollower(rf.currentTerm)
+					//fmt.Printf("新leader已经选出，%d号节点成为Follower，currentTerm=%d\n", rf.me, rf.currentTerm)
+				//case <- rf.beLeaderCh:
+					//fmt.Printf("%d号节点成为Leader，currentTerm=%d\n", rf.me, rf.currentTerm)
 				}
 			case Leader:
 				rf.startAppendEntries()
@@ -198,14 +209,17 @@ func (rf *Raft) startElection() {
 			continue
 		}
 		go func(idx int) {
-			reply := rf.sendRequestVote(rf.address, args)
-			if reply.Term > rf.currentTerm {
-				rf.mu.Lock()
-				rf.beFollower(reply.Term)
-				rf.mu.Unlock()
+			rf.mu.Lock()
+			if rf.role != Candidate {
 				return
 			}
-			if rf.role != Candidate { // 有其他candidate当选了leader
+			rf.mu.Unlock()
+			reply := rf.sendRequestVote(rf.address, args)
+			if reply.Term > rf.currentTerm { // 此Candidate的term过时
+				rf.beFollower(reply.Term)
+				return
+			}
+			if rf.role != Candidate || rf.currentTerm != args.Term{ // 有其他candidate当选了leader
 				return
 			}
 			if reply.VoteGranted {
@@ -214,10 +228,8 @@ func (rf *Raft) startElection() {
 			}
 			if atomic.LoadInt32(&votes) > int32(n/2) {
 				fmt.Printf("%s 获得过半的投票，成为leader\n", rf.address)
-				rf.mu.Lock()
 				rf.beLeader()
 				send(rf.voteCh)
-				rf.mu.Unlock()
 			}
 		}(i)
 	}
@@ -255,7 +267,9 @@ func (rf *Raft) RequestVote(ctx context.Context, args *RequestVoteArgs) (*Reques
 	if rf.currentTerm < args.Term {
 		// candidate1 发送RPC到 candidate2，candidate2发现自己的term过时了，candidate2立即变成follower，再判断要不要给candidate1投票
 		//？ candidate1 发送RPC到 follower，follower发现的term过时，清空自己的votedFor，再判断要不要给candidate1投票
-		rf.beFollower(args.Term)
+		rf.mu.Unlock()
+		rf.beFollower(args.Term) // 待细究
+		rf.mu.Lock()
 	}
 	if args.Term >= rf.currentTerm && (rf.votedFor == NULL || rf.votedFor == args.CandidateId) &&
 		(args.LastLogTerm > rf.getLastLogTerm() ||
@@ -419,20 +433,6 @@ func (rf *Raft) AppendEntries(ctx context.Context, args *AppendEntriesArgs) (*Ap
 	return reply, nil
 }
 
-func (rf *Raft) registerServer(address string) {
-	//Raft服务的Server端
-	server := grpc.NewServer()
-	RegisterRaftServer(server, rf)
-	lis, err1 := net.Listen("tcp", address)
-	if err1 != nil {
-		log.Fatalln(err1)
-	}
-	err2 := server.Serve(lis)
-	if err2 != nil {
-		log.Fatalln(err2)
-	}
-}
-
 func send(ch chan bool) {
 	select {
 	case <- ch: //chan中有内容则先取出
@@ -441,24 +441,27 @@ func send(ch chan bool) {
 }
 
 func (rf *Raft) beCandidate() {
+	rf.mu.Lock()
 	rf.role = Candidate
 	rf.currentTerm++
 	rf.votedFor = rf.me
+	rf.mu.Unlock()
 	go rf.startElection()
 }
 
 func (rf *Raft) beFollower(term int32) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.role = Follower
 	rf.votedFor = NULL
 	rf.currentTerm = term
 }
 
 func (rf *Raft) beLeader() {
-	//if rf.role != Candidate {
-	//	return
-	//}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.role = Leader
-	n :=  len(rf.members)
+	n := len(rf.members)
 	rf.nextIndex = make([]int32, n)
 	rf.matchIndex = make([]int32, n)
 	for i := 0; i < n; i++ {
@@ -482,7 +485,7 @@ func (rf *Raft) getLastLogTerm() int32 {
 
 func (rf *Raft) getPrevLogIndex(i int) int32 {
 	// 每个peer对应的nextIndex会变，其相应的prevLogIndex也会变
-	return rf.nextIndex[i]-1
+	return rf.nextIndex[i]-1 //
 }
 
 func (rf *Raft) getPrevLogTerm(i int) int32 {
