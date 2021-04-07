@@ -259,7 +259,6 @@ func (rf *Raft) sendRequestVote(address string, args *RPC.RequestVoteArgs) *RPC.
 
 func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RPC.RequestVoteReply, error) {
 	// 方法实现端
-	rf.mu.Lock()
 	reply := &RPC.RequestVoteReply{VoteGranted:false}
 	reply.Term = rf.currentTerm //用于candidate更新自己的current
 	// 发送者：args-term
@@ -268,15 +267,12 @@ func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RP
 	if rf.currentTerm < args.Term {
 		// candidate1 发送RPC到 candidate2，candidate2发现自己的term过时了，candidate2立即变成follower，再判断要不要给candidate1投票
 		//？ candidate1 发送RPC到 follower，follower发现的term过时，清空自己的votedFor，再判断要不要给candidate1投票
-		rf.mu.Unlock()
 		rf.beFollower(args.Term) // 待细究
-		rf.mu.Lock()
 	}
 	if args.Term >= rf.currentTerm && (rf.votedFor == NULL || rf.votedFor == args.CandidateId) &&
 		(args.LastLogTerm > rf.getLastLogTerm() ||
 			(args.LastLogTerm == rf.getLastLogTerm() && args.LastLogIndex >= rf.getLastLogIndex())) {
 		reply.VoteGranted = true
-		rf.mu.Unlock()
 		rf.votedFor = args.CandidateId
 		send(rf.voteCh)
 	}
