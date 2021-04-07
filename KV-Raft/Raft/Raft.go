@@ -1,4 +1,4 @@
-package main
+package Raft
 
 import (
 	"context"
@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	PERSISTER "../persist"
+	RPC "../RaftRPC"
 )
 
 type State int
@@ -27,11 +29,11 @@ const (
 )
 
 type Op struct {
-	option string
-	key string
-	value string
-	id int32
-	seq int32
+	Option string
+	Key    string
+	Value  string
+	Id     int32
+	Seq    int32
 }
 
 type Entry struct {
@@ -70,7 +72,7 @@ type Raft struct {
 	beLeaderCh chan bool
 	applyCh chan ApplyMsg
 
-	persist *Persister
+	Persist *PERSISTER.Persister
 }
 func getMe(address string) int32 {
 	add := strings.Split(address, ".") // 192.168.8.4:5000
@@ -105,7 +107,7 @@ func (rf *Raft) Start(command interface{}) (int32, int32, bool) {
 func (rf *Raft) registerServer(address string) {
 	//Raft服务的Server端
 	server := grpc.NewServer()
-	RegisterRaftServer(server, rf)
+	RPC.RegisterRaftServer(server, rf)
 	lis, err1 := net.Listen("tcp", address)
 	if err1 != nil {
 		log.Fatalln(err1)
@@ -116,12 +118,12 @@ func (rf *Raft) registerServer(address string) {
 	}
 }
 
-func MakeRaft(address string, members []string, persist *Persister, mu *sync.Mutex, ) *Raft {
+func MakeRaft(address string, members []string, persist *PERSISTER.Persister, mu *sync.Mutex, ) *Raft {
 	raft := &Raft{}
 	raft.address = address
 	raft.me = getMe(address)
 	raft.members = members
-	raft.persist = persist
+	raft.Persist = persist
 	raft.mu = mu
 	n := len(raft.members)
 	fmt.Printf("当前节点:%s, rf.me=%d, 所有成员地址：\n", raft.address, raft.me)
@@ -191,7 +193,7 @@ func (rf *Raft) init() {
 
 func (rf *Raft) startElection() {
 	fmt.Printf("############ 开始选举 me:%d term:%d ############\n", rf.me, rf.currentTerm)
-	args := &RequestVoteArgs{
+	args := &RPC.RequestVoteArgs{
 		Term:          rf.currentTerm,
 		CandidateId:   rf.me,
 		LastLogIndex:  rf.getLastLogIndex(),
@@ -235,7 +237,7 @@ func (rf *Raft) startElection() {
 	}
 }
 
-func (rf *Raft) sendRequestVote(address string, args *RequestVoteArgs) *RequestVoteReply {
+func (rf *Raft) sendRequestVote(address string, args *RPC.RequestVoteArgs) *RPC.RequestVoteReply {
 	// RequestVote RPC 中的Client端
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
@@ -247,7 +249,7 @@ func (rf *Raft) sendRequestVote(address string, args *RequestVoteArgs) *RequestV
 			log.Fatalln(err2)
 		}
 	}()
-	client := NewRaftClient(conn)
+	client := RPC.NewRaftClient(conn)
 	reply, err3 := client.RequestVote(context.Background(), args)
 	if err3 != nil {
 		log.Fatalln(err3)
@@ -255,11 +257,11 @@ func (rf *Raft) sendRequestVote(address string, args *RequestVoteArgs) *RequestV
 	return reply
 }
 
-func (rf *Raft) RequestVote(ctx context.Context, args *RequestVoteArgs) (*RequestVoteReply, error) {
+func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RPC.RequestVoteReply, error) {
 	// 方法实现端
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	reply := &RequestVoteReply{VoteGranted:false}
+	reply := &RPC.RequestVoteReply{VoteGranted:false}
 	reply.Term = rf.currentTerm //用于candidate更新自己的current
 	// 发送者：args-term
 	// 接收者：rf-currentTerm
@@ -297,7 +299,7 @@ func (rf *Raft) startAppendEntries() {
 			for {
 				appendEntries := rf.log[rf.nextIndex[idx]:] // 刚开始是空的，为了维持自己的leader身份
 				entries, _ := json.Marshal(appendEntries) // 转码
-				args := &AppendEntriesArgs{
+				args := &RPC.AppendEntriesArgs{
 					Term:          rf.currentTerm,
 					LeaderId:      rf.me,
 					PrevLogIndex:   rf.getPrevLogIndex(idx),
@@ -334,7 +336,7 @@ func (rf *Raft) sendHeartBeat() {
 	for i := 0; i < n; i++ {
 		go func(idx int) {
 			for {
-				args := &AppendEntriesArgs{
+				args := &RPC.AppendEntriesArgs{
 					Term:          rf.currentTerm,
 					LeaderId:      rf.me,
 					PrevLogIndex:  rf.getPrevLogIndex(idx),
@@ -372,8 +374,8 @@ func (rf *Raft) updateLastApplied() { // apply
 		rf.lastApplied++
 		curEntry := rf.log[rf.lastApplied]
 		cm := curEntry.Command
-		if cm.option == "Put" {
-			rf.persist.Put(cm.key, cm.value)
+		if cm.Option == "Put" {
+			rf.Persist.Put(cm.Key, cm.Value)
 		}
 		applyMsg := ApplyMsg{
 			true,
@@ -384,7 +386,7 @@ func (rf *Raft) updateLastApplied() { // apply
 	}
 }
 
-func (rf *Raft) sendAppendEntries(address string, args *AppendEntriesArgs) *AppendEntriesReply {
+func (rf *Raft) sendAppendEntries(address string, args *RPC.AppendEntriesArgs) *RPC.AppendEntriesReply {
 	// AppendEntries RPC 的Client端
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
@@ -396,7 +398,7 @@ func (rf *Raft) sendAppendEntries(address string, args *AppendEntriesArgs) *Appe
 			log.Fatalln(err2)
 		}
 	}()
-	client := NewRaftClient(conn)
+	client := RPC.NewRaftClient(conn)
 	reply, err3 := client.AppendEntries(context.Background(), args)
 	if err3 != nil {
 		log.Fatalln(err3)
@@ -404,10 +406,10 @@ func (rf *Raft) sendAppendEntries(address string, args *AppendEntriesArgs) *Appe
 	return reply
 }
 
-func (rf *Raft) AppendEntries(ctx context.Context, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
+func (rf *Raft) AppendEntries(ctx context.Context, args *RPC.AppendEntriesArgs) (*RPC.AppendEntriesReply, error) {
 	// 发送者：args-Term
 	// 接收者：rf-currentTerm
-	reply := &AppendEntriesReply{}
+	reply := &RPC.AppendEntriesReply{}
 	reply.Term = rf.currentTerm
 	reply.Success = false
 	if rf.currentTerm < args.Term { // 接收者发现自己的term过期了，更新term，转成follower
@@ -496,7 +498,7 @@ func (rf *Raft) getPrevLogTerm(i int) int32 {
 	return rf.log[prevLogIndex].term
 }
 
-func (rf *Raft) getState() (int32, bool) {
+func (rf *Raft) GetState() (int32, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	term := rf.currentTerm

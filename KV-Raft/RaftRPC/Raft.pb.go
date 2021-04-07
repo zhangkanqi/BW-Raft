@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.23.0
 // 	protoc        v3.14.0
-// source: Raft.proto
+// source: KV-Raft.proto
 
-package main
+package RaftRPC
 
 import (
 	context "context"
@@ -362,10 +362,10 @@ var file_Raft_proto_goTypes = []interface{}{
 	(*AppendEntriesReply)(nil), // 3: AppendEntriesReply
 }
 var file_Raft_proto_depIdxs = []int32{
-	0, // 0: Raft.RequestVote:input_type -> RequestVoteArgs
-	2, // 1: Raft.AppendEntries:input_type -> AppendEntriesArgs
-	1, // 2: Raft.RequestVote:output_type -> RequestVoteReply
-	3, // 3: Raft.AppendEntries:output_type -> AppendEntriesReply
+	0, // 0: KV-Raft.RequestVote:input_type -> RequestVoteArgs
+	2, // 1: KV-Raft.AppendEntries:input_type -> AppendEntriesArgs
+	1, // 2: KV-Raft.RequestVote:output_type -> RequestVoteReply
+	3, // 3: KV-Raft.AppendEntries:output_type -> AppendEntriesReply
 	2, // [2:4] is the sub-list for method output_type
 	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
@@ -456,7 +456,7 @@ var _ grpc.ClientConnInterface
 // is compatible with the grpc package it is being compiled against.
 const _ = grpc.SupportPackageIsVersion6
 
-// RaftClient is the client API for Raft service.
+// RaftClient is the client API for KV-Raft service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type RaftClient interface {
@@ -474,7 +474,7 @@ func NewRaftClient(cc grpc.ClientConnInterface) RaftClient {
 
 func (c *raftClient) RequestVote(ctx context.Context, in *RequestVoteArgs, opts ...grpc.CallOption) (*RequestVoteReply, error) {
 	out := new(RequestVoteReply)
-	err := c.cc.Invoke(ctx, "/Raft/RequestVote", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/KV-Raft/RequestVote", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -483,14 +483,14 @@ func (c *raftClient) RequestVote(ctx context.Context, in *RequestVoteArgs, opts 
 
 func (c *raftClient) AppendEntries(ctx context.Context, in *AppendEntriesArgs, opts ...grpc.CallOption) (*AppendEntriesReply, error) {
 	out := new(AppendEntriesReply)
-	err := c.cc.Invoke(ctx, "/Raft/AppendEntries", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/KV-Raft/AppendEntries", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// RaftServer is the server API for Raft service.
+// RaftServer is the server API for KV-Raft service.
 type RaftServer interface {
 	RequestVote(context.Context, *RequestVoteArgs) (*RequestVoteReply, error)
 	AppendEntries(context.Context, *AppendEntriesArgs) (*AppendEntriesReply, error)
@@ -521,7 +521,7 @@ func _Raft_RequestVote_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/Raft/RequestVote",
+		FullMethod: "/KV-Raft/RequestVote",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RaftServer).RequestVote(ctx, req.(*RequestVoteArgs))
@@ -539,7 +539,7 @@ func _Raft_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/Raft/AppendEntries",
+		FullMethod: "/KV-Raft/AppendEntries",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RaftServer).AppendEntries(ctx, req.(*AppendEntriesArgs))
@@ -548,7 +548,7 @@ func _Raft_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(
 }
 
 var _Raft_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "Raft",
+	ServiceName: "KV-Raft",
 	HandlerType: (*RaftServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -561,5 +561,5 @@ var _Raft_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "Raft.proto",
+	Metadata: "KV-Raft.proto",
 }

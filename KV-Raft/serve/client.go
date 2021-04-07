@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	RPC "../RaftRPC"
 )
 
 type Client struct {
@@ -15,7 +16,7 @@ type Client struct {
 	leaderId int
 }
 
-func (ct *Client) sendWriteRequest(address string, args *WriteArgs) *WriteReply {
+func (ct *Client) sendWriteRequest(address string, args *RPC.WriteArgs) *RPC.WriteReply {
 	// WriteRequest 的 Client端 拨号
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
@@ -27,7 +28,7 @@ func (ct *Client) sendWriteRequest(address string, args *WriteArgs) *WriteReply 
 			log.Fatalln(err2)
 		}
 	}()
-	client := NewServeClient(conn)
+	client := RPC.NewServeClient(conn)
 	reply, err3 := client.WriteRequest(context.Background(), args)
 	if err3 != nil {
 		log.Fatalln(err3)
@@ -35,7 +36,7 @@ func (ct *Client) sendWriteRequest(address string, args *WriteArgs) *WriteReply 
 	return reply
 }
 
-func (ct *Client) sendReadRequest(address string, args *ReadArgs) *ReadReply {
+func (ct *Client) sendReadRequest(address string, args *RPC.ReadArgs) *RPC.ReadReply {
 	// ReadRequest 的 Client端， 拨号
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
@@ -47,7 +48,7 @@ func (ct *Client) sendReadRequest(address string, args *ReadArgs) *ReadReply {
 			log.Fatalln(err2)
 		}
 	}()
-	client := NewServeClient(conn)
+	client := RPC.NewServeClient(conn)
 	reply, err3 := client.ReadRequest(context.Background(), args)
 	if err3 != nil {
 		log.Fatalln(err3)
@@ -57,7 +58,7 @@ func (ct *Client) sendReadRequest(address string, args *ReadArgs) *ReadReply {
 
 func (ct *Client) Write(key, value string) {
 	// 重定向到leader
-	args := &WriteArgs{
+	args := &RPC.WriteArgs{
 		Key:           key,
 		Value:         value,
 	}
@@ -77,7 +78,7 @@ func (ct *Client) Write(key, value string) {
 
 func (ct *Client) Read(key string) {
 	//重定向到leader
-	args := &ReadArgs{Key:key}
+	args := &RPC.ReadArgs{Key:key}
 	id := ct.leaderId
 	n := len(ct.cluster)
 	for {

@@ -1,4 +1,4 @@
-package main
+package persist
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func (p *Persister) PrintStrVal(key string) {
 // Test leveldb
 //func main() {
 //	p := &Persister{}
-//	p.Init("../Raft")
+//	p.Init("../KV-Raft")
 //	p.Put("1", "a")
 //	fmt.Println(p.Get("1"))
 //	err := p.db.Close()

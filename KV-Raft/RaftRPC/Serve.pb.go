@@ -4,7 +4,7 @@
 // 	protoc        v3.14.0
 // source: Serve.proto
 
-package main
+package RaftRPC
 
 import (
 	context "context"
