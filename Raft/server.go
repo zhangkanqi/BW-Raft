@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"../Raft"
+	"Raft"
 )
 
 type Server struct  {
