@@ -202,20 +202,20 @@ func (rf *Raft) startElection() {
 	var votes int32 = 1 //自己给自己投的一票
 	n := len(rf.members)
 	for i := 0; i < n; i++ {
-		rf.mu.Lock()
+		//rf.mu.Lock()
 		if rf.role != Candidate {
 			return
 		}
-		rf.mu.Unlock()
+		//rf.mu.Unlock()
 		if rf.members[i] == rf.address {
 			continue
 		}
 		go func(idx int) {
-			rf.mu.Lock()
+			//rf.mu.Lock()
 			if rf.role != Candidate {
 				return
 			}
-			rf.mu.Unlock()
+			//rf.mu.Unlock()
 			reply := rf.sendRequestVote(rf.address, args)
 			if reply.Term > rf.currentTerm { // 此Candidate的term过时
 				rf.beFollower(reply.Term)
