@@ -260,7 +260,6 @@ func (rf *Raft) sendRequestVote(address string, args *RPC.RequestVoteArgs) *RPC.
 func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RPC.RequestVoteReply, error) {
 	// 方法实现端
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	reply := &RPC.RequestVoteReply{VoteGranted:false}
 	reply.Term = rf.currentTerm //用于candidate更新自己的current
 	// 发送者：args-term
@@ -277,6 +276,7 @@ func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RP
 		(args.LastLogTerm > rf.getLastLogTerm() ||
 			(args.LastLogTerm == rf.getLastLogTerm() && args.LastLogIndex >= rf.getLastLogIndex())) {
 		reply.VoteGranted = true
+		rf.mu.Unlock()
 		rf.votedFor = args.CandidateId
 		send(rf.voteCh)
 	}
@@ -443,25 +443,19 @@ func send(ch chan bool) {
 }
 
 func (rf *Raft) beCandidate() {
-	rf.mu.Lock()
 	rf.role = Candidate
 	rf.currentTerm++
 	rf.votedFor = rf.me
-	rf.mu.Unlock()
 	go rf.startElection()
 }
 
 func (rf *Raft) beFollower(term int32) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	rf.role = Follower
 	rf.votedFor = NULL
 	rf.currentTerm = term
 }
 
 func (rf *Raft) beLeader() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	rf.role = Leader
 	n := len(rf.members)
 	rf.nextIndex = make([]int32, n)
