@@ -1,11 +1,12 @@
 package Raft
 
 import (
+	RPC "../RaftRPC"
+	PERSISTER "../persist"
 	"context"
 	"encoding/json"
 	"fmt"
 	"google.golang.org/grpc"
-	"log"
 	"math/rand"
 	"net"
 	"sort"
@@ -14,8 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	PERSISTER "../persist"
-	RPC "../RaftRPC"
 )
 
 type State int
@@ -79,7 +78,7 @@ func getMe(address string) int32 {
 	add = strings.Split(add[len(add)-1], ":") // 4:5000
 	me, err := strconv.Atoi(add[0])
 	if err != nil {
-		log.Fatalln(err)
+		fmt.Println(err)
 	}
 	return int32(me)
 }
@@ -106,15 +105,18 @@ func (rf *Raft) Start(command interface{}) (int32, int32, bool) {
 
 func (rf *Raft) registerServer(address string) {
 	//Raft服务的Server端
-	server := grpc.NewServer()
-	RPC.RegisterRaftServer(server, rf)
-	lis, err1 := net.Listen("tcp", address)
-	if err1 != nil {
-		log.Fatalln(err1)
-	}
-	err2 := server.Serve(lis)
-	if err2 != nil {
-		log.Fatalln(err2)
+	for {
+		server := grpc.NewServer()
+		RPC.RegisterRaftServer(server, rf)
+		lis, err1 := net.Listen("tcp", address)
+		if err1 != nil {
+			fmt.Println(err1)
+		}
+		err2 := server.Serve(lis)
+		if err2 != nil {
+			fmt.Println(err2)
+		}
+		fmt.Println("····················注册服务器成功······················")
 	}
 }
 
@@ -159,7 +161,7 @@ func (rf *Raft) init() {
 			default:
 			}
 			electionTime := time.Duration(rand.Intn(350)+500) * time.Millisecond
-
+			//electionTime := time.Second
 			switch rf.role {
 			case Follower:
 				select {
@@ -176,10 +178,10 @@ func (rf *Raft) init() {
 				case <- time.After(electionTime):
 					fmt.Printf("%d号节点选举超时，成为candidate，发起新一轮选举，旧的currentTerm=%d\n", rf.me, rf.currentTerm)
 					rf.beCandidate()
-				//case <- rf.heartbeatCh: // 新的leader已选出
+					//case <- rf.heartbeatCh: // 新的leader已选出
 					//rf.beFollower(rf.currentTerm)
 					//fmt.Printf("新leader已经选出，%d号节点成为Follower，currentTerm=%d\n", rf.me, rf.currentTerm)
-				//case <- rf.beLeaderCh:
+					//case <- rf.beLeaderCh:
 					//fmt.Printf("%d号节点成为Leader，currentTerm=%d\n", rf.me, rf.currentTerm)
 				}
 			case Leader:
@@ -188,6 +190,8 @@ func (rf *Raft) init() {
 			}
 		}
 	}()
+
+	go rf.registerServer(rf.address)
 
 }
 
@@ -204,6 +208,7 @@ func (rf *Raft) startElection() {
 	for i := 0; i < n; i++ {
 		//rf.mu.Lock()
 		if rf.role != Candidate {
+			fmt.Println("Candidate 角色变更")
 			return
 		}
 		//rf.mu.Unlock()
@@ -216,45 +221,60 @@ func (rf *Raft) startElection() {
 				return
 			}
 			//rf.mu.Unlock()
-			reply := rf.sendRequestVote(rf.address, args)
-			if reply.Term > rf.currentTerm { // 此Candidate的term过时
-				rf.beFollower(reply.Term)
-				return
-			}
-			if rf.role != Candidate || rf.currentTerm != args.Term{ // 有其他candidate当选了leader
-				return
-			}
-			if reply.VoteGranted {
-				fmt.Printf("%s 获得 %s 的投票\n", rf.address, rf.members[i])
-				atomic.AddInt32(&votes, 1)
-			}
-			if atomic.LoadInt32(&votes) > int32(n/2) {
-				fmt.Printf("%s 获得过半的投票，成为leader\n", rf.address)
-				rf.beLeader()
-				send(rf.voteCh)
+			fmt.Printf("向 %s 发起send RequestVote\n", rf.members[idx])
+			ret, reply := rf.sendRequestVote(rf.address, args) //一定要有ret
+			if ret {
+				fmt.Println("RequestVote成功返回结果")
+				if reply.Term > rf.currentTerm { // 此Candidate的term过时
+					fmt.Println(rf.me, " 的term过期，转成follower")
+					rf.beFollower(reply.Term)
+					return
+				}
+				if rf.role != Candidate || rf.currentTerm != args.Term{ // 有其他candidate当选了leader
+					return
+				}
+				if reply.VoteGranted {
+					fmt.Printf("%s 获得 %s 的投票\n", rf.address, rf.members[i])
+					atomic.AddInt32(&votes, 1)
+				} else {
+					fmt.Printf("%s 未获得 %s 的投票\n", rf.address, rf.members[i])
+				}
+				if atomic.LoadInt32(&votes) > int32(n/2) {
+					fmt.Printf("%s 获得过半的投票，成为leader\n", rf.address)
+					rf.beLeader()
+					send(rf.voteCh)
+				}
+			} else {
+				fmt.Println("RequestVote返回结果失败")
 			}
 		}(i)
 	}
 }
 
-func (rf *Raft) sendRequestVote(address string, args *RPC.RequestVoteArgs) *RPC.RequestVoteReply {
+func (rf *Raft) sendRequestVote(address string, args *RPC.RequestVoteArgs) (bool, *RPC.RequestVoteReply) {
 	// RequestVote RPC 中的Client端
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
-		log.Fatalln(err1)
+		fmt.Println("拨号失败")
+		fmt.Println(err1)
 	}
 	defer func() {
 		err2 := conn.Close()
 		if err2 != nil {
-			log.Fatalln(err2)
+			fmt.Println("关闭拨号失败")
+			fmt.Println(err2)
 		}
 	}()
 	client := RPC.NewRaftClient(conn)
-	reply, err3 := client.RequestVote(context.Background(), args)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	reply, err3 := client.RequestVote(ctx, args)
 	if err3 != nil {
-		log.Fatalln(err3)
+		fmt.Println("接受RequestVote结果失败:",err3)
+		return false, reply
 	}
-	return reply
+
+	return true, reply
 }
 
 func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RPC.RequestVoteReply, error) {
@@ -267,6 +287,7 @@ func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RP
 	if rf.currentTerm < args.Term {
 		// candidate1 发送RPC到 candidate2，candidate2发现自己的term过时了，candidate2立即变成follower，再判断要不要给candidate1投票
 		//？ candidate1 发送RPC到 follower，follower发现的term过时，清空自己的votedFor，再判断要不要给candidate1投票
+		fmt.Printf("%d term 过期，成为follower\n", rf.me)
 		rf.beFollower(args.Term) // 待细究
 	}
 	if args.Term >= rf.currentTerm && (rf.votedFor == NULL || rf.votedFor == args.CandidateId) &&
@@ -386,18 +407,18 @@ func (rf *Raft) sendAppendEntries(address string, args *RPC.AppendEntriesArgs) *
 	// AppendEntries RPC 的Client端
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
-		log.Fatalln(err1)
+		fmt.Println(err1)
 	}
 	defer func() {
 		err2 := conn.Close()
 		if err2 != nil {
-			log.Fatalln(err2)
+			fmt.Println(err2)
 		}
 	}()
 	client := RPC.NewRaftClient(conn)
 	reply, err3 := client.AppendEntries(context.Background(), args)
 	if err3 != nil {
-		log.Fatalln(err3)
+		fmt.Println(err3)
 	}
 	return reply
 }
@@ -419,7 +440,7 @@ func (rf *Raft) AppendEntries(ctx context.Context, args *RPC.AppendEntriesArgs) 
 	var newEntries []Entry
 	err := json.Unmarshal(args.Entries, &newEntries)
 	if err != nil {
-		log.Fatalln(err)
+		fmt.Println(err)
 	}
 	rf.log = rf.log[:args.PrevLogIndex+1]
 	rf.log = append(rf.log, newEntries[0:]...)
