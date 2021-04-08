@@ -1,19 +1,19 @@
 package main
 
 import (
-	"context"
+	//RAFT "../Raft"
+	RPC "../RaftRPC"
+	PERSISTER "../persist"
+	//TESTRAFT "../Test"
+	RAFT "../Test"
 	"flag"
 	"fmt"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"log"
 	"net"
 	"strings"
 	"sync"
 	"time"
-	RPC "../RaftRPC"
-	RAFT "../Raft"
-	PERSISTER "../persist"
-
 )
 
 type Server struct  {
@@ -76,15 +76,16 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 func (sv *Server) registerServer(address string) {
 	// Client和集群成员交互 的Server端
 	for {
-		server := grpc.NewServer()
-		RPC.RegisterServeServer(server, sv)
+		fmt.Println("················进入外部注册服务器········")
 		lis, err1 := net.Listen("tcp", address)
 		if err1 != nil {
-			log.Fatalln(err1)
+			fmt.Println(err1)
 		}
+		server := grpc.NewServer()
+		RPC.RegisterServeServer(server, sv)
 		err2 := server.Serve(lis)
 		if err2 != nil {
-			log.Fatalln(err2)
+			fmt.Println(err2)
 		}
 	}
 }
@@ -103,6 +104,7 @@ func main() {
 		persist: persist,
 	}
 	go sv.registerServer(sv.address+"1")
+	//sv.rf = RAFT.MakeRaft(sv.address, sv.members, sv.persist, sv.mu)
 	sv.rf = RAFT.MakeRaft(sv.address, sv.members, sv.persist, sv.mu)
 	time.Sleep(time.Minute * 2)
 }
