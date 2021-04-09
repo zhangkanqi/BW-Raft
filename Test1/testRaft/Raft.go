@@ -351,7 +351,7 @@ func (rf *Raft) startAppendLog() {
 
 	for i := 0; i < len(rf.members); i++ {
 		go func(idx int) {
-				fmt.Println(rf.address, " 向 ", rf.members[i], "append Log")
+				fmt.Println(rf.address, " 向 ", rf.members[idx], "append Log")
 		}(i)
 	}
 }
