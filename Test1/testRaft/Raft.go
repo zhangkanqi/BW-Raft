@@ -1,6 +1,7 @@
 package testRaft
 
 import (
+	"encoding/json"
 	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -176,7 +177,8 @@ func (rf *Raft) init() {
 					//    rf.mu.Unlock()
 				}
 			case Leader:
-				fmt.Println(rf.address, " 当选leader········")
+				//fmt.Println(rf.address, " 当选leader········")
+				rf.startAppendLog()
 				time.Sleep(heartbeatTime)
 			}
 		}
@@ -342,4 +344,14 @@ func (rf *Raft) beCandidate() { //Reset election timer are finished in caller
 	rf.votedFor = rf.me //vote myself first
 	//ask for other's vote
 	go rf.startElection() //Send RequestVote RPCs to all other servers
+}
+
+func (rf *Raft) startAppendLog() {
+	fmt.Println("startAppendLog")
+
+	for i := 0; i < len(rf.members); i++ {
+		go func(idx int) {
+				fmt.Println(rf.address, " 向 ", rf.members[i], "append Log")
+		}(i)
+	}
 }
