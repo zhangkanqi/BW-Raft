@@ -27,6 +27,7 @@ type Server struct  {
 
 func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.WriteReply, error) {
 	reply := &RPC.WriteReply{}
+	/*
 	_, reply.IsLeader = sv.rf.GetState()
 	if !reply.IsLeader {
 		return reply, nil
@@ -42,14 +43,16 @@ func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.W
 		reply.IsLeader = false
 		return reply, nil
 	}
-	//apply := <- sv.applyCh
+	apply := <- sv.applyCh
 	fmt.Printf("新指令的内容：%s, 新指令的index：%d\n", apply.Command, index)
 	reply.Success = true
+	*/
 	return reply, nil
 }
 
 func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.ReadReply, error) {
 	reply := &RPC.ReadReply{}
+	/*
 	_, reply.IsLeader = sv.rf.GetState()
 	if !reply.IsLeader {
 		return reply, nil
@@ -64,10 +67,11 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 		reply.IsLeader = false
 		return reply, nil
 	}
-	//apply := <- sv.applyCh
+	apply := <- sv.applyCh
 	fmt.Printf("新指令的内容：%s, 新指令的index：%d\n", apply.Command, index)
 	//读取的内容
 	fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
+	*/
 	return reply, nil
 }
 
