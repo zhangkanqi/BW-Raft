@@ -222,7 +222,8 @@ func (rf *Raft) startElection() {
 			}
 			//rf.mu.Unlock()
 			fmt.Printf("%s 向 %s 发起send RequestVote\n", rf.address, rf.members[idx])
-			ret, reply := rf.sendRequestVote(rf.address, args) //一定要有ret
+			//原本把rf.members[idx]写成了rf.address
+			ret, reply := rf.sendRequestVote(rf.members[idx], args) //一定要有ret
 			if ret {
 				fmt.Println("RequestVote成功返回结果")
 				if reply.Term > rf.currentTerm { // 此Candidate的term过时
