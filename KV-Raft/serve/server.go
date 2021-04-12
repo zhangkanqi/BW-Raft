@@ -1,14 +1,11 @@
 package main
 
 import (
-	//RAFT "../Raft"
-	RPC "../RaftRPC"
+	RAFT "../Raft"
 	PERSISTER "../persist"
-	//TESTRAFT "../Test1"
-	RAFT "../Test1"
+	RPC "../RPC"
 	"flag"
 	"fmt"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"net"
 	"strings"
@@ -22,11 +19,10 @@ type Server struct  {
 	mu *sync.Mutex
 	rf *RAFT.Raft
 	persist *PERSISTER.Persister
-	applyCh chan RAFT.ApplyMsg
 
 }
 //go run . -address 192.168.8.3:5000 -members 192.168.8.3:5000192.168.8.6:5000,192.168.8.7:5000
-
+/*
 func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.WriteReply, error) {
 	reply := &RPC.WriteReply{}
 	_, reply.IsLeader = sv.rf.GetState()
@@ -72,7 +68,7 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 	fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
 	return reply, nil
 }
-
+*/
 func (sv *Server) registerServer(address string) {
 	// Client和集群成员交互 的Server端
 	for {

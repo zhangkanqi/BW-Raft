@@ -8,7 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	RPC "../RaftRPC"
+	RPC "../RPC"
 )
 
 type Client struct {
