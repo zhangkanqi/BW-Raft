@@ -1,16 +1,18 @@
 package main
 
 import (
-	RAFT "../Raft"
-	PERSISTER "../persist"
-	RPC "../RPC"
+
 	"flag"
 	"fmt"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"net"
 	"strings"
 	"sync"
 	"time"
+	RAFT "../Raft"
+	PERSISTER "../persist"
+	RPC "../RPC"
 )
 
 type Server struct  {
@@ -22,7 +24,7 @@ type Server struct  {
 
 }
 //go run . -address 192.168.8.3:5000 -members 192.168.8.3:5000192.168.8.6:5000,192.168.8.7:5000
-/*
+
 func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.WriteReply, error) {
 	reply := &RPC.WriteReply{}
 	_, reply.IsLeader = sv.rf.GetState()
@@ -40,7 +42,7 @@ func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.W
 		reply.IsLeader = false
 		return reply, nil
 	}
-	apply := <- sv.applyCh
+	//apply := <- sv.applyCh
 	fmt.Printf("新指令的内容：%s, 新指令的index：%d\n", apply.Command, index)
 	reply.Success = true
 	return reply, nil
@@ -62,13 +64,13 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 		reply.IsLeader = false
 		return reply, nil
 	}
-	apply := <- sv.applyCh
+	//apply := <- sv.applyCh
 	fmt.Printf("新指令的内容：%s, 新指令的index：%d\n", apply.Command, index)
 	//读取的内容
 	fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
 	return reply, nil
 }
-*/
+
 func (sv *Server) registerServer(address string) {
 	// Client和集群成员交互 的Server端
 	for {

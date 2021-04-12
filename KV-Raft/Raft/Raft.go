@@ -221,7 +221,7 @@ func (rf *Raft) startElection() {
 				return
 			}
 			//rf.mu.Unlock()
-			fmt.Printf("向 %s 发起send RequestVote\n", rf.members[idx])
+			fmt.Printf("%s 向 %s 发起send RequestVote\n", rf.address, rf.members[idx])
 			ret, reply := rf.sendRequestVote(rf.address, args) //一定要有ret
 			if ret {
 				fmt.Println("RequestVote成功返回结果")
@@ -279,6 +279,9 @@ func (rf *Raft) sendRequestVote(address string, args *RPC.RequestVoteArgs) (bool
 
 func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RPC.RequestVoteReply, error) {
 	// 方法实现端
+	fmt.Printf("·····1····%s 收到投票请求：·········\n", rf.address)
+	fmt.Printf("请求者信息：term：%d  index：%d\n", args.Term, args.LastLogIndex)
+	fmt.Printf("接受者信息：term：%d  index：%d\n", rf.currentTerm, rf.getLastLogIndex())
 	reply := &RPC.RequestVoteReply{VoteGranted:false}
 	reply.Term = rf.currentTerm //用于candidate更新自己的current
 	// 发送者：args-term
@@ -297,9 +300,15 @@ func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RP
 		rf.votedFor = args.CandidateId
 		send(rf.voteCh)
 	}
+	if reply.VoteGranted {
+		fmt.Printf("······2·····%s投出自己的票·······\n", rf.address)
+	} else {
+		fmt.Printf("······2·····%s拒绝投票·······\n", rf.address)
+	}
 	return reply, nil
 }
 
+/*
 func (rf *Raft) startAppendEntries() {
 	fmt.Printf("############ 开始日志追加 me:%d term:%d ############\n", rf.me, rf.currentTerm)
 	n := len(rf.members)
@@ -345,7 +354,22 @@ func (rf *Raft) startAppendEntries() {
 		}(i)
 	}
 
+}*/
+
+
+func (rf *Raft) startAppendEntries() {
+	fmt.Println("startAppendLog")
+
+	for i := 0; i < len(rf.members); i++ {
+		if rf.address == rf.members[i] {
+			continue
+		}
+		go func(idx int) {
+			fmt.Printf("%s 向 %s append log, term :%d\n",rf.address, rf.members[idx], rf.currentTerm)
+		}(i)
+	}
 }
+
 
 func (rf *Raft) sendHeartBeat() {
 	fmt.Printf("############ 发送心跳包 me:%d term:%d ############\n", rf.me, rf.currentTerm)
@@ -463,6 +487,7 @@ func (rf *Raft) beCandidate() {
 	rf.role = Candidate
 	rf.currentTerm++
 	rf.votedFor = rf.me
+	fmt.Println(rf.address, " become Candidate, new Term: ", rf.currentTerm)
 	go rf.startElection()
 }
 
