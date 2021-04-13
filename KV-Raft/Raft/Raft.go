@@ -27,6 +27,7 @@ const (
 	Leader
 )
 
+
 type Op struct {
 	Option string
 	Key    string
@@ -56,7 +57,9 @@ type Raft struct {
 	currentTerm int32
 	votedFor int32
 	votes int32
+	electionTime time.Duration
 	log []Entry
+	mp map[int32]*Raft
 
 	commitIndex int32
 	lastApplied int32
@@ -66,9 +69,7 @@ type Raft struct {
 
 	voteCh chan bool
 	appendLogCh chan bool
-	heartbeatCh chan bool
 	killCh chan bool
-	beLeaderCh chan bool
 	applyCh chan ApplyMsg
 
 	Persist *PERSISTER.Persister
@@ -124,6 +125,7 @@ func MakeRaft(address string, members []string, persist *PERSISTER.Persister, mu
 	raft := &Raft{}
 	raft.address = address
 	raft.me = getMe(address)
+	raft.mp[raft.me] = raft
 	raft.members = members
 	raft.Persist = persist
 	raft.mu = mu
@@ -147,8 +149,6 @@ func (rf *Raft) init() {
 	rf.voteCh = make(chan bool, 1)
 	rf.appendLogCh = make(chan bool, 1)
 	rf.killCh = make(chan bool, 1)
-	rf.heartbeatCh = make(chan bool, 1)
-	rf.beLeaderCh = make(chan bool, 1)
 
 	heartbeatTime := time.Duration(150) * time.Millisecond
 
@@ -159,21 +159,17 @@ func (rf *Raft) init() {
 				return
 			default:
 			}
-			electionTime := time.Duration(rand.Intn(350)+500) * time.Millisecond
-
-			// rf.mu.Lock()
+			//electionTime := time.Duration(rand.Intn(350)+500) * time.Millisecond
 			state := rf.role
-			// rf.mu.Unlock()
 			switch state {
 			case Follower, Candidate:
 				select {
 				case <-rf.voteCh:
 				case <-rf.appendLogCh:
-				case <-time.After(electionTime):
-					//    rf.mu.Lock()
+				//以上两个Ch表示Follower/Candidate已经在对相应的请求进行了响应，否则从程序运行开始就进行选举超时计时了
+				case <-time.After(rf.electionTime):
 					fmt.Println("######## time.After(electionTime) #######")
-					rf.beCandidate() //becandidate, Reset election timer, then start election
-					//    rf.mu.Unlock()
+					rf.beCandidate()
 				}
 			case Leader:
 				rf.startAppendEntries()
@@ -198,23 +194,22 @@ func (rf *Raft) startElection() {
 	var votes int32 = 1 //自己给自己投的一票
 	n := len(rf.members)
 	for i := 0; i < n; i++ {
-		//rf.mu.Lock()
+		rf.mu.Lock()
 		if rf.role != Candidate {
 			fmt.Println("Candidate 角色变更")
 			return
 		}
-		//rf.mu.Unlock()
+		rf.mu.Unlock()
 		if rf.members[i] == rf.address {
 			continue
 		}
 		go func(idx int) {
-			//rf.mu.Lock()
+			rf.mu.Lock()
 			if rf.role != Candidate {
 				return
 			}
-			//rf.mu.Unlock()
+			rf.mu.Unlock()
 			fmt.Printf("%s --> %s RequestVote RPC\n", rf.address, rf.members[idx])
-			//原本把rf.members[idx]写成了rf.address
 			ret, reply := rf.sendRequestVote(rf.members[idx], args) //一定要有ret
 			if ret {
 				if reply.Term > rf.currentTerm { // 此Candidate的term过时
@@ -222,7 +217,7 @@ func (rf *Raft) startElection() {
 					rf.beFollower(reply.Term)
 					return
 				}
-				if rf.role != Candidate || rf.currentTerm != args.Term{ // 有其他candidate当选了leader
+				if rf.role != Candidate || rf.currentTerm != args.Term{ // 有其他candidate当选了leader或者不是在最新Term（rf.currentTerm）进行的投票
 					return
 				}
 				if reply.VoteGranted {
@@ -273,17 +268,14 @@ func (rf *Raft) sendRequestVote(address string, args *RPC.RequestVoteArgs) (bool
 
 func (rf *Raft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*RPC.RequestVoteReply, error) {
 	// 方法实现端
+	// 发送者：args-term
+	// 接收者：rf-currentTerm
 	fmt.Printf("·····1····%s 收到投票请求：·········\n", rf.address)
 	reply := &RPC.RequestVoteReply{VoteGranted:false}
 	reply.Term = rf.currentTerm //用于candidate更新自己的current
-	// 发送者：args-term
-	// 接收者：rf-currentTerm
-	// ????根据下面这行代码，已投票的candidate/follower发现自己的term过时后会成为follower（清空votedFor），那之前的投票会被收回吗？
-	if rf.currentTerm < args.Term {
-		// candidate1 发送RPC到 candidate2，candidate2发现自己的term过时了，candidate2立即变成follower，再判断要不要给candidate1投票
-		//？ candidate1 发送RPC到 follower，follower发现的term过时，清空自己的votedFor，再判断要不要给candidate1投票
-		fmt.Printf("接收者的term: %d < 发送者的term: %d，成为follower\n", rf.currentTerm, args.Term)
-		rf.beFollower(args.Term) // 待细究
+	if rf.currentTerm < args.Term { //旧term时的投票已经无效，现在只关心最新term时的投票情况
+		//fmt.Printf("接收者的term: %d < 发送者的term: %d，成为follower\n", rf.currentTerm, args.Term)
+		rf.beFollower(args.Term) // 清空votedFor
 	}
 	fmt.Printf("请求者：term：%d  index：%d lastTerm:%d\n", args.Term, args.LastLogIndex, args.LastLogTerm)
 	fmt.Printf("接收者：term：%d  index：%d lastTerm:%d vote:%d\n", rf.currentTerm, rf.getLastLogIndex(), rf.getLastLogTerm(), rf.votedFor)
@@ -458,6 +450,7 @@ func (rf *Raft) beCandidate() {
 	rf.role = Candidate
 	rf.currentTerm++
 	rf.votedFor = rf.me
+	rf.electionTime = time.Duration(rand.Intn(350)+500) * time.Millisecond
 	fmt.Println(rf.address, " become Candidate, new Term: ", rf.currentTerm)
 	go rf.startElection()
 }
