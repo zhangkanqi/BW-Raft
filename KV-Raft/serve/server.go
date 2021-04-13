@@ -1,7 +1,9 @@
 package main
 
 import (
-
+	RPC "../RPC"
+	RAFT "../Raft"
+	PERSISTER "../persist"
 	"flag"
 	"fmt"
 	"golang.org/x/net/context"
@@ -10,9 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	RAFT "../Raft"
-	PERSISTER "../persist"
-	RPC "../RPC"
 )
 
 type Server struct  {
@@ -75,6 +74,7 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 	return reply, nil
 }
 
+
 func (sv *Server) registerServer(address string) {
 	// Client和集群成员交互 的Server端
 	for {
@@ -92,6 +92,7 @@ func (sv *Server) registerServer(address string) {
 	}
 }
 
+
 func main() {
 	var add = flag.String("address", "", "servers's address")
 	var mems = flag.String("members", "", "other members' address")
@@ -106,7 +107,7 @@ func main() {
 		persist: persist,
 	}
 	go sv.registerServer(sv.address+"1")
-	//sv.rf = RAFT.MakeRaft(sv.address, sv.members, sv.persist, sv.mu)
 	sv.rf = RAFT.MakeRaft(sv.address, sv.members, sv.persist, sv.mu)
 	time.Sleep(time.Minute * 2)
 }
+
