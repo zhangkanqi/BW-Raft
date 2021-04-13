@@ -1,14 +1,13 @@
 package main
 
 import (
+	RPC "../RPC"
 	"context"
 	"flag"
 	"fmt"
 	"google.golang.org/grpc"
-	"log"
 	"strconv"
 	"strings"
-	RPC "../RPC"
 )
 
 type Client struct {
@@ -16,44 +15,46 @@ type Client struct {
 	leaderId int
 }
 
-func (ct *Client) sendWriteRequest(address string, args *RPC.WriteArgs) *RPC.WriteReply {
+func (ct *Client) sendWriteRequest(address string, args *RPC.WriteArgs) (bool, *RPC.WriteReply) {
 	// WriteRequest 的 Client端 拨号
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
-		log.Fatalln(err1)
+		fmt.Println(err1)
 	}
 	defer func () {
 		err2 := conn.Close()
 		if err2 != nil {
-			log.Fatalln(err2)
+			fmt.Println(err2)
 		}
 	}()
 	client := RPC.NewServeClient(conn)
 	reply, err3 := client.WriteRequest(context.Background(), args)
 	if err3 != nil {
-		log.Fatalln(err3)
+		fmt.Println(err3)
+		return false, reply
 	}
-	return reply
+	return true, reply
 }
 
-func (ct *Client) sendReadRequest(address string, args *RPC.ReadArgs) *RPC.ReadReply {
+func (ct *Client) sendReadRequest(address string, args *RPC.ReadArgs) (bool, *RPC.ReadReply) {
 	// ReadRequest 的 Client端， 拨号
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
-		log.Fatalln(err1)
+		fmt.Println(err1)
 	}
 	defer func() {
 		err2 := conn.Close()
 		if err2 != nil {
-			log.Fatalln(err2)
+			fmt.Println(err2)
 		}
 	}()
 	client := RPC.NewServeClient(conn)
 	reply, err3 := client.ReadRequest(context.Background(), args)
 	if err3 != nil {
-		log.Fatalln(err3)
+		fmt.Println(err3)
+		return false, reply
 	}
-	return reply
+	return true, reply
 }
 
 func (ct *Client) Write(key, value string) {
@@ -65,12 +66,14 @@ func (ct *Client) Write(key, value string) {
 	id := ct.leaderId
 	n := len(ct.cluster)
 	for {
-		reply := ct.sendWriteRequest(ct.cluster[id], args)
-		if !reply.IsLeader {
-			fmt.Printf("Write请求，%s 不是Leader, id++\n", ct.cluster[id])
-			id = (id + 1) % n
-		} else {
-			break
+		ret, reply := ct.sendWriteRequest(ct.cluster[id], args)
+		if ret {
+			if !reply.IsLeader {
+				fmt.Printf("Write请求，%s 不是Leader, id++\n", ct.cluster[id])
+				id = (id + 1) % n
+			} else {
+				break //找到了leaderId，结束for
+			}
 		}
 	}
 	ct.leaderId = id
@@ -82,22 +85,20 @@ func (ct *Client) Read(key string) {
 	id := ct.leaderId
 	n := len(ct.cluster)
 	for {
-		reply := ct.sendReadRequest(ct.cluster[id], args)
-		if !reply.IsLeader {
-			fmt.Printf("Read请求，%s 不是Leader, id++\n", ct.cluster[id])
-			id = (id + 1) % n
-		} else {
-			break
+		ret, reply := ct.sendReadRequest(ct.cluster[id], args)
+		if ret {
+			if !reply.IsLeader {
+				fmt.Printf("Read请求，%s 不是Leader, id++\n", ct.cluster[id])
+				id = (id + 1) % n
+			} else {
+				break
+			}
 		}
 	}
 	ct.leaderId = id
 }
 
 func (ct *Client) startWriteRequest() {
-	n := len(ct.cluster)
-	for i := 0; i < n; i++ {
-		ct.cluster[i] = ct.cluster[i] + "1"
-	}
 	num := 5 // 最简单5个write 5个read
 	var key, value string
 	for i := 0; i < num; i++ {
@@ -108,10 +109,6 @@ func (ct *Client) startWriteRequest() {
 }
 
 func (ct *Client) startReadRequest() {
-	n := len(ct.cluster)
-	for i := 0; i < n; i++ {
-		ct.cluster[i] = ct.cluster[i] + "1" // ？
-	}
 	num := 5 // 最简单5个write 5个read
 	var key string
 	for i := 0; i < num; i++ {
@@ -127,6 +124,7 @@ func main() {
 	fmt.Println("集群成员：")
 	n := len(cluster)
 	for i := 0; i < n; i++ {
+		cluster[i] = cluster[i] + "1"
 		fmt.Println(cluster[i])
 	}
 	ct := Client{}

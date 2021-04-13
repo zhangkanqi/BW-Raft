@@ -96,9 +96,10 @@ func (rf *Raft) Start(command interface{}) (int32, int32, bool) {
 			Command: command.(Op), //？
 		}
 		rf.log = append(rf.log, newEntry)
+		fmt.Printf("新日志的Index：%d，term：%d，内容：%s\n", index, term, command)
 		rf.startAppendEntries()
+
 	}
-	fmt.Printf("新日志的Index：%d，term：%d，内容：%s\n", index, term, command)
 	return index, term, isLeader
 }
 
@@ -146,6 +147,7 @@ func (rf *Raft) init() {
 	rf.voteCh = make(chan bool, 1)
 	rf.appendLogCh = make(chan bool, 1)
 	rf.killCh = make(chan bool, 1)
+	rf.applyCh = make(chan ApplyMsg, 1)
 
 	heartbeatTime := time.Duration(150) * time.Millisecond
 
@@ -379,7 +381,7 @@ func (rf *Raft) updateLastApplied() { // apply
 		rf.lastApplied++
 		curEntry := rf.log[rf.lastApplied]
 		cm := curEntry.Command
-		if cm.Option == "Put" {
+		if cm.Option == "write" {
 			rf.Persist.Put(cm.Key, cm.Value)
 		}
 		applyMsg := ApplyMsg{
@@ -387,8 +389,16 @@ func (rf *Raft) updateLastApplied() { // apply
 			curEntry.Command,
 			int(rf.lastApplied),
 		}
-		rf.applyCh <- applyMsg
+		//rf.applyCh <- applyMsg
+		applyRequest(rf.applyCh, applyMsg)
 	}
+}
+func applyRequest(ch chan ApplyMsg, msg ApplyMsg) {
+	select {
+	case <- ch:
+	default:
+	}
+	ch <- msg
 }
 
 func (rf *Raft) sendAppendEntries(address string, args *RPC.AppendEntriesArgs) (bool, *RPC.AppendEntriesReply) {
@@ -444,7 +454,7 @@ func (rf *Raft) AppendEntries(ctx context.Context, args *RPC.AppendEntriesArgs) 
 	fmt.Printf("待追加日志长度：%d\n", len(newEntries))
 	rf.log = rf.log[:args.PrevLogIndex+1]
 	rf.log = append(rf.log, newEntries[0:]...)
-	if args.LeaderCommit > rf.commitIndex {
+	if args.LeaderCommit > rf.commitIndex { // not 0 > 0
 		rf.commitIndex = Min(args.LeaderCommit, rf.getLastLogIndex())
 		rf.updateLastApplied()
 	}
