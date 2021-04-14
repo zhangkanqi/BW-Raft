@@ -37,7 +37,7 @@ type Op struct {
 }
 
 type Entry struct {
-	term int32
+	Term int32
 	Command Op
 }
 
@@ -84,19 +84,17 @@ func getMe(address string) int32 {
 
 // 新指令的index，term，isLeader
 func (rf *Raft) Start(command interface{}) (int32, int32, bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	var index int32 = -1
 	term := rf.currentTerm
 	isLeader := rf.role == Leader
 	if isLeader {
 		index = rf.getLastLogIndex() + 1
 		newEntry := Entry{
-			term:    rf.currentTerm,
+			Term:    rf.currentTerm,
 			Command: command.(Op), //？
 		}
 		rf.log = append(rf.log, newEntry)
-		fmt.Printf("新日志的Index：%d，term：%d，内容：%s\n", index, term, command)
+		fmt.Printf("Start()----新日志的Index：%d，term：%d，内容：%s, startAppendEntries\n", index, newEntry.Term, newEntry.Command)
 		rf.startAppendEntries()
 
 	}
@@ -306,6 +304,9 @@ func (rf *Raft) startAppendEntries() {
 		go func(idx int) {
 			for { //因为会遇到冲突使nextIndex--，所以不能只执行一次
 				appendEntries := rf.log[rf.nextIndex[idx]:] // 刚开始是空的，为了维持自己的leader身份
+				if len(appendEntries) > 0 {
+					fmt.Printf("待追加日志长度appendEntries：%d 信息：term：%d cm:%s\n", len(appendEntries), appendEntries[0].Term, appendEntries[0].Command)
+				}
 				entries, _ := json.Marshal(appendEntries) // 转码
 				args := &RPC.AppendEntriesArgs{ //prevLogIndex和prevLogTerm会因为冲突而改变，所以放在了for循环内
 					Term:          rf.currentTerm,
@@ -315,7 +316,7 @@ func (rf *Raft) startAppendEntries() {
 					Entries:       entries,
 					LeaderCommit:  rf.commitIndex,
 				}
-				if len(entries) == 0 {
+				if len(appendEntries) == 0 {
 					fmt.Printf("%s --> %s  HeartBeat RPC\n", rf.address, rf.members[idx])
 				} else {
 					fmt.Printf("%s --> %s  AppendEntries RPC\n", rf.address, rf.members[idx])
@@ -332,10 +333,16 @@ func (rf *Raft) startAppendEntries() {
 					if reply.Success {
 						rf.matchIndex[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，matchIndex=prevLogIndex
 						rf.nextIndex[idx] = rf.matchIndex[idx] + 1
+						if len(appendEntries) == 0 {
+							fmt.Printf("向 %s 发送心跳包成功，nextIndex[%s]=%d\n", rf.members[idx], rf.members[idx], rf.nextIndex[idx])
+						} else {
+							fmt.Printf("向 %s 日志追加成功，nextIndex[%s]=%d\n", rf.members[idx], rf.members[idx], rf.nextIndex[idx])
+						}
 						rf.updateCommitIndex()
 						return
 					} else {
 						rf.nextIndex[idx]--
+						fmt.Printf("日志不匹配，更新后nextIndex[%s]=%d\n", rf.members[idx], rf.nextIndex[idx])
 					}
 				}
 			}
@@ -362,27 +369,34 @@ func (rf *Raft) startAppendEntries() {
 */
 
 
-func (rf *Raft) updateCommitIndex() {
+func (rf *Raft) updateCommitIndex()  { // 只由leader调用
 	n := len(rf.matchIndex)
+	for i := 0; i  < n; i++ {
+		fmt.Printf("matchIndex[%s]=%d\n", rf.members[i], rf.matchIndex[i])
+	}
 	copyMatchIndex := make([]int32, n)
 	copy(copyMatchIndex, rf.matchIndex)
 	sort.Sort(IntSlice(copyMatchIndex))
 	N := copyMatchIndex[n / 2] // 过半
-	if N > rf.commitIndex && rf.log[N].term == rf.currentTerm {
+	fmt.Printf("过半的commitIndex：%d\n", N)
+	if N > rf.commitIndex && rf.log[N].Term == rf.currentTerm {
 		rf.commitIndex = N
-		//fmt.Printf("new CommitIndex：%d\n", rf.commitIndex)
+		fmt.Printf("new LeaderCommit：%d\n", rf.commitIndex)
 		rf.updateLastApplied()
 	}
 }
 
-func (rf *Raft) updateLastApplied() { // apply
-	fmt.Printf("lastApplied: %d, commitIndex: %d\n", rf.lastApplied, rf.commitIndex)
+func (rf *Raft) updateLastApplied()  { // apply
+	fmt.Printf("updateLastApplied()---lastApplied: %d, commitIndex: %d\n", rf.lastApplied, rf.commitIndex)
 	for rf.lastApplied < rf.commitIndex { // 0 0
 		rf.lastApplied++
 		curEntry := rf.log[rf.lastApplied]
 		cm := curEntry.Command
 		if cm.Option == "write" {
 			rf.Persist.Put(cm.Key, cm.Value)
+			fmt.Printf("Write 命令：%s-%s 被apply\n", cm.Key, cm.Value)
+		} else if cm.Option == "read" {
+			fmt.Printf("Read 命令：key:%s 被apply\n", cm.Key)
 		}
 		applyMsg := ApplyMsg{
 			true,
@@ -436,12 +450,12 @@ func (rf *Raft) AppendEntries(ctx context.Context, args *RPC.AppendEntriesArgs) 
 	rfLogLen := int32(len(rf.log))
 	fmt.Printf("请求者：term：%d  pIndex：%d prevTerm:%d\n", args.Term, args.PrevLogIndex, args.PrevLogTerm)
 	if rfLogLen > args.PrevLogIndex {
-		fmt.Printf("接收者：term：%d  loglen：%d prevTerm:%d\n", rf.currentTerm, len(rf.log), rf.log[args.PrevLogIndex].term)
+		fmt.Printf("接收者：term：%d  loglen：%d prevTerm:%d\n", rf.currentTerm, len(rf.log), rf.log[args.PrevLogIndex].Term)
 	} else {
 		fmt.Printf("接收者：term：%d  loglen：%d prevTerm:NULL\n", rf.currentTerm, len(rf.log))
 	}
 	if args.Term < rf.currentTerm || rfLogLen <= args.PrevLogIndex ||
-		rfLogLen > args.PrevLogIndex && rf.log[args.PrevLogIndex].term != args.PrevLogTerm {
+		rfLogLen > args.PrevLogIndex && rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		fmt.Printf("~~~~~~2~~~~~日志冲突~~~~~~~\n\n")
 		return reply, nil
 	}
@@ -451,12 +465,20 @@ func (rf *Raft) AppendEntries(ctx context.Context, args *RPC.AppendEntriesArgs) 
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Printf("待追加日志长度：%d\n", len(newEntries))
+	if len(newEntries) > 0 {
+		fmt.Printf("日志匹配，待追加日志长度：%d 第一个内容：term：%d command：%s\n", len(newEntries), newEntries[0].Term, newEntries[0].Command)
+	} else {
+		fmt.Printf("心跳包，待追加日志长度为0\n")
+	}
 	rf.log = rf.log[:args.PrevLogIndex+1]
 	rf.log = append(rf.log, newEntries[0:]...)
+	fmt.Printf("############## 更新后的日志 ###########\n")
+	for i := 0; i < len(rf.log); i++ {
+		fmt.Printf("index:%d term:%d command:%s\n", i, rf.log[i].Term, rf.log[i].Command)
+	}
 	if args.LeaderCommit > rf.commitIndex { // not 0 > 0
 		rf.commitIndex = Min(args.LeaderCommit, rf.getLastLogIndex())
-		rf.updateLastApplied()
+		rf.updateLastApplied() //在各自的存储引擎中存储相关的内容，在本此实现中，集群成员共用一个存储引擎，此处可以生省略。
 	}
 	send(rf.appendLogCh)
 	reply.Success = true
@@ -499,6 +521,7 @@ func (rf *Raft) beLeader() {
 	rf.matchIndex = make([]int32, n)
 	for i := 0; i < n; i++ {
 		rf.nextIndex[i] = rf.getLastLogIndex()+1
+		fmt.Printf("beLeader---NextIndex[%s] = %d\n", rf.members[i], rf.nextIndex[i])
 	}
 	fmt.Println(rf.address, "---------------become LEADER--------------", rf.currentTerm)
 
@@ -513,22 +536,23 @@ func (rf *Raft) getLastLogIndex() int32 {
 
 func (rf *Raft) getLastLogTerm() int32 {
 	index := rf.getLastLogIndex()
-	return rf.log[index].term
+	return rf.log[index].Term
 }
 
 func (rf *Raft) getPrevLogIndex(i int) int32 {
 	// 每个peer对应的nextIndex会变，其相应的prevLogIndex也会变
+	fmt.Printf("NextIndex[%s] = %d, prevLogIndex=%d\n", rf.members[i], rf.nextIndex[i], rf.nextIndex[i]-1)
 	return rf.nextIndex[i]-1 //
 }
 
 func (rf *Raft) getPrevLogTerm(i int) int32 {
 	prevLogIndex := rf.getPrevLogIndex(i)
-	return rf.log[prevLogIndex].term
+	fmt.Printf("########prevLogIndex:%d########\n", prevLogIndex)
+	fmt.Printf("########prevLogIndexTerm:%d########\n", rf.log[prevLogIndex].Term)
+	return rf.log[prevLogIndex].Term
 }
 
 func (rf *Raft) GetState() (int32, bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	term := rf.currentTerm
 	isLeader := rf.role == Leader
 	return term, isLeader

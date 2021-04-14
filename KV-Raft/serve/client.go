@@ -74,6 +74,8 @@ func (ct *Client) Write(key, value string) {
 			} else {
 				break //找到了leaderId，结束for
 			}
+		} else {
+			fmt.Printf("send WriteRequest 返回false\n")
 		}
 	}
 	ct.leaderId = id
@@ -93,6 +95,8 @@ func (ct *Client) Read(key string) {
 			} else {
 				break
 			}
+		} else {
+			fmt.Printf("send ReadRequest 返回false\n")
 		}
 	}
 	ct.leaderId = id
@@ -104,6 +108,7 @@ func (ct *Client) startWriteRequest() {
 	for i := 0; i < num; i++ {
 		key = strconv.Itoa(i+1)
 		value = strconv.Itoa(i+1)
+		fmt.Printf("	·······start write %s-%s········\n", key, value)
 		ct.Write(key, value)
 	}
 }
@@ -113,6 +118,7 @@ func (ct *Client) startReadRequest() {
 	var key string
 	for i := 0; i < num; i++ {
 		key = strconv.Itoa(i+1)
+		fmt.Printf("	·······start read key：%s········\n", key)
 		ct.Read(key)
 	}
 }

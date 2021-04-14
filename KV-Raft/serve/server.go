@@ -22,13 +22,14 @@ type Server struct  {
 	persist *PERSISTER.Persister
 
 }
-//go run . -address 192.168.8.3:5000 -members 192.168.8.3:5000192.168.8.6:5000,192.168.8.7:5000
 
 func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.WriteReply, error) {
-	reply := &RPC.WriteReply{}
 
+	fmt.Printf("\n·····1····进入%s的WriteRequest处理端·········\n", sv.address)
+	reply := &RPC.WriteReply{}
 	_, reply.IsLeader = sv.rf.GetState()
 	if !reply.IsLeader {
+		fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
 		return reply, nil
 	}
 	request := RAFT.Op{
@@ -38,22 +39,25 @@ func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.W
 	}
 	index, _, isLeader := sv.rf.Start(request)
 	if !isLeader {
-		fmt.Println("*******When write, Leader change!*****")
+		fmt.Printf("******* %s When write, Leader change!*****\n", sv.address)
 		reply.IsLeader = false
 		return reply, nil
 	}
 	//apply := <- sv.applyCh
-	fmt.Printf("新指令的内容：%s %s %s, 新指令的index：%d\n", request.Option, request.Key, request.Value, index)
+	fmt.Printf("Server端--新指令的内容：%s %s %s, 新指令的index：%d\n", request.Option, request.Key, request.Value, index)
 	reply.IsLeader = true
 	reply.Success = true
+	fmt.Printf("·····2····%s的WriteRequest处理成功·········\n", sv.address)
 
 	return reply, nil
 }
 
 func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.ReadReply, error) {
+	fmt.Printf("\n·····1····进入%s的ReadRequest处理端·········\n", sv.address)
 	reply := &RPC.ReadReply{}
 	_, reply.IsLeader = sv.rf.GetState()
 	if !reply.IsLeader {
+		fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
 		return reply, nil
 	}
 	request := RAFT.Op{
@@ -62,7 +66,7 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 	}
 	index, _, isLeader := sv.rf.Start(request)
 	if !isLeader {
-		fmt.Println("*******When read, Leader change!*****")
+		fmt.Printf("******* %s When read, Leader change!*****\n", sv.address)
 		reply.IsLeader = false
 		return reply, nil
 	}
@@ -71,6 +75,7 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 	fmt.Printf("新指令的内容：%s %s, 新指令的index：%d\n", request.Option, request.Key, index)
 	//读取的内容
 	fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
+	fmt.Printf("·····2····%s的ReadRequest处理成功·········\n", sv.address)
 	return reply, nil
 }
 
