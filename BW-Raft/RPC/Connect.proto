@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+message ConnectArgs {
+}
+
+message ConnectReply {
+  bool success = 1;
+}
+
+
+service Connect {
+  rpc IsConnect(ConnectArgs) returns (ConnectReply);
+}
