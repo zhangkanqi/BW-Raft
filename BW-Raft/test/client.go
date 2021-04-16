@@ -1,6 +1,7 @@
 package main
 
 import (
+	"../AK"
 	"context"
 	"fmt"
 	"google.golang.org/grpc"
@@ -19,17 +20,18 @@ func main() {
 			fmt.Println(err2)
 		}
 	}()
-	client := NewKKQQClient(conn)
-	args := &KKQQArgs{S:"ss"}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	client := AK.NewKKQQClient(conn)
+	args := &AK.KKQQArgs{S:"ss"}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*20)
 	defer cancel()
 	reply, err := client.IsKKQQ(ctx, args)
-	if err != nil {
-		panic(err.Error())
-	}
 	if reply != nil {
 		fmt.Println("接受返回信息成功 ", reply.Success)
 	} else {
-		fmt.Printf("接受返回结果超时")
+		fmt.Printf("接受返回结果超时\n")
 	}
+	if err != nil {
+		panic(err.Error())
+	}
+
 }
