@@ -18,12 +18,17 @@ type Observer struct {
 	cluster[] string
 }
 
+func (ob *Observer) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.WriteReply, error) {
+	reply := &RPC.WriteReply{}
+	return reply, nil
+}
+
 func (ob *Observer) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.ReadReply, error) {
 	fmt.Printf("\n·····1····进入observer %s 的ReadRequest处理端·········\n", ob.address)
 	reply := &RPC.ReadReply{}
 	n := len(ob.cluster)
 	for i := 0; i < n; i++ {
-		arg := &RPC.ConnectArgs{}
+		arg := &RPC.ConnectArgs{} // 50002端口
 		if ob.judgeConnect(ob.cluster[i], arg) {
 			p := &PERSISTER.Persister{}
 			p.Init("../db"+ob.cluster[i]+time.Now().Format("20060102"))
@@ -83,6 +88,6 @@ func main() {
 		address: address,
 		cluster: cluster,
 	}
-	ob.registerServer(address)
-	time.Sleep(time.Minute * 2)
+	ob.registerServer(address+"1")
+	//time.Sleep(time.Minute * 2)
 }

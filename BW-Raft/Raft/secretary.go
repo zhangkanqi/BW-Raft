@@ -1,73 +1,110 @@
 package main
 
 import (
+	RPC "../RPC"
+	BW_RAFT "../Raft"
+	PERSISTER "../persist"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"math/rand"
 	"sort"
+	"strings"
+	"sync"
+	"time"
 )
 
-func (rf *BWRaft) startAppendEntries() {
-	fmt.Printf("############ 开始日志追加 me:%d term:%d ############\n", rf.me, rf.currentTerm)
-	n := len(rf.members)
+type Secretary struct {
+	mu *sync.Mutex
+	currentTerm int32
+	log []BW_RAFT.Entry
+	address string
+	cluster[] string //整个集群成员的地址，包括leader和followerß
+
+	commitIndex int32
+	lastApplied int32
+
+	nextIndex []int32
+	matchIndex []int32
+
+	appendLogCh chan bool
+	replicateCh chan bool
+	Persist *PERSISTER.Persister
+}
+
+func (se *Secretary) getPrevLogIndex(i int) int32 {
+	// 每个peer对应的nextIndex会变，其相应的prevLogIndex也会变
+	fmt.Printf("NextIndex[%s] = %d, prevLogIndex=%d\n", se.cluster[i], se.nextIndex[i], se.nextIndex[i]-1)
+	return se.nextIndex[i]-1 //
+}
+
+func (se *Secretary) getPrevLogTerm(i int) int32 {
+	prevLogIndex := se.getPrevLogIndex(i)
+	fmt.Printf("########prevLogIndex:%d########\n", prevLogIndex)
+	fmt.Printf("########prevLogIndexTerm:%d########\n", se.log[prevLogIndex].Term)
+	return se.log[prevLogIndex].Term
+}
+
+func (se *Secretary) startAppendEntries() {
+	fmt.Printf("############Secretary %s--开始日志追加--term:%d ############\n",se.address, se.currentTerm)
+	n := len(se.cluster)
 	for i := 0; i < n; i++ {
-		if rf.role != Leader {
-			return
-		}
-		if rf.members[i] == rf.address {
-			continue
-		}
-		go func(idx int) {
-			for { //因为会遇到冲突使nextIndex--，所以不能只执行一次
-				appendEntries := rf.log[rf.nextIndex[idx]:] // 刚开始是空的，为了维持自己的leader身份
+		//随机发送，过半即apply
+		rand.Seed(time.Now().UnixNano())
+		id := (i + rand.Intn(n)) % n // 不向leader append！！
+		go func(idx int) { //
+			for {
+				appendEntries := se.log[se.nextIndex[idx]:] // 刚开始是空的，为了维持自己的leader身份
 				if len(appendEntries) > 0 {
-					fmt.Printf("待追加日志长度appendEntries：%d 信息：term：%d cm:%s\n", len(appendEntries), appendEntries[0].Term, appendEntries[0].Command)
+					fmt.Printf("待追加日志长度appendEntries：%d (首)信息：term：%d cm:%s\n", len(appendEntries), appendEntries[0].Term, appendEntries[0].Command)
 				}
 				entries, _ := json.Marshal(appendEntries) // 转码
 				args := &RPC.AppendEntriesArgs{ //prevLogIndex和prevLogTerm会因为冲突而改变，所以放在了for循环内
-					Term:          rf.currentTerm,
-					LeaderId:      rf.me,
-					PrevLogIndex:   rf.getPrevLogIndex(idx),
-					PrevLogTerm:    rf.getPrevLogTerm(idx),
+					Term:          se.currentTerm,
+					LeaderId:      0,
+					PrevLogIndex:   se.getPrevLogIndex(idx),
+					PrevLogTerm:    se.getPrevLogTerm(idx),
 					Entries:       entries,
-					LeaderCommit:  rf.commitIndex,
+					LeaderCommit:  se.commitIndex,
 				}
 				if len(appendEntries) == 0 {
-					fmt.Printf("%s --> %s  HeartBeat RPC\n", rf.address, rf.members[idx])
+					fmt.Printf("%s --> %s  HeartBeat RPC\n", se.address, se.cluster[idx])
 				} else {
-					fmt.Printf("%s --> %s  AppendEntries RPC\n", rf.address, rf.members[idx])
+					fmt.Printf("%s --> %s  AppendEntries RPC\n", se.address, se.cluster[idx])
 				}
-				ret, reply := rf.sendAppendEntries(rf.members[idx], args)
+				ret, reply := se.sendAppendEntries(se.cluster[idx], args)
 				if ret {
-					if reply.Term > rf.currentTerm {
-						rf.beFollower(reply.Term)
+					if reply.Term > se.currentTerm {
+						// se.beFollower(reply.Term)
 						return
 					}
-					if rf.role != Leader || reply.Term != rf.currentTerm { //只处理最新term（rf.currentTerm）的数据
+					if reply.Term != se.currentTerm { //只处理最新term（se.currentTerm）的数据
 						return
 					}
 					if reply.Success {
-						rf.matchIndex[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，matchIndex=prevLogIndex
-						rf.nextIndex[idx] = rf.matchIndex[idx] + 1
+						se.matchIndex[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，matchIndex=prevLogIndex
+						se.nextIndex[idx] = se.matchIndex[idx] + 1
 						if len(appendEntries) == 0 {
-							fmt.Printf("向 %s 发送心跳包成功，nextIndex[%s]=%d\n", rf.members[idx], rf.members[idx], rf.nextIndex[idx])
+							fmt.Printf("向 %s 发送心跳包成功，nextIndex[%s]=%d\n", se.cluster[idx], se.cluster[idx], se.nextIndex[idx])
 						} else {
-							fmt.Printf("向 %s 日志追加成功，nextIndex[%s]=%d\n", rf.members[idx], rf.members[idx], rf.nextIndex[idx])
+							fmt.Printf("向 %s 日志追加成功，nextIndex[%s]=%d\n", se.cluster[idx], se.cluster[idx], se.nextIndex[idx])
 						}
-						rf.updateCommitIndex()
+						se.updateCommitIndex()
 						return
 					} else {
-						rf.nextIndex[idx]--
-						fmt.Printf("日志不匹配，更新后nextIndex[%s]=%d\n", rf.members[idx], rf.nextIndex[idx])
+						se.nextIndex[idx]--
+						fmt.Printf("日志不匹配，更新后nextIndex[%s]=%d\n", se.cluster[idx], se.nextIndex[idx])
 					}
 				}
 			}
-		}(i)
+		}(id)
 	}
 
 }
 
-func (rf *BWRaft) sendAppendEntries(address string, args *RPC.AppendEntriesArgs) (bool, *RPC.AppendEntriesReply) {
+func (se *Secretary) sendAppendEntries(address string, args *RPC.AppendEntriesArgs) (bool, *RPC.AppendEntriesReply) {
 	// AppendEntries RPC 的Client端
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
@@ -88,41 +125,60 @@ func (rf *BWRaft) sendAppendEntries(address string, args *RPC.AppendEntriesArgs)
 	return true, reply
 }
 
-func (rf *BWRaft) updateCommitIndex()  { // 只由leader调用
-	n := len(rf.matchIndex)
+func (se *Secretary) updateCommitIndex()  { // 只由leader调用
+	n := len(se.matchIndex)
 	for i := 0; i  < n; i++ {
-		fmt.Printf("matchIndex[%s]=%d\n", rf.members[i], rf.matchIndex[i])
+		fmt.Printf("matchIndex[%s]=%d\n", se.cluster[i], se.matchIndex[i])
 	}
 	copyMatchIndex := make([]int32, n)
-	copy(copyMatchIndex, rf.matchIndex)
+	copy(copyMatchIndex, se.matchIndex)
 	sort.Sort(IntSlice(copyMatchIndex))
 	N := copyMatchIndex[n / 2] // 过半
 	fmt.Printf("过半的commitIndex：%d\n", N)
-	if N > rf.commitIndex && rf.log[N].Term == rf.currentTerm {
-		rf.commitIndex = N
-		fmt.Printf("new LeaderCommit：%d\n", rf.commitIndex)
-		rf.updateLastApplied()
+	if N > se.commitIndex && se.log[N].Term == se.currentTerm {
+		se.commitIndex = N
+		fmt.Printf("new LeaderCommit：%d\n", se.commitIndex)
+		se.updateLastApplied()
 	}
 }
 
-func (rf *BWRaft) updateLastApplied()  { // apply
-	fmt.Printf("updateLastApplied()---lastApplied: %d, commitIndex: %d\n", rf.lastApplied, rf.commitIndex)
-	for rf.lastApplied < rf.commitIndex { // 0 0
-		rf.lastApplied++
-		curEntry := rf.log[rf.lastApplied]
+func (se *Secretary) updateLastApplied()  { // apply
+	fmt.Printf("updateLastApplied()---lastApplied: %d, commitIndex: %d\n", se.lastApplied, se.commitIndex)
+	for se.lastApplied < se.commitIndex { // 0 0
+		se.lastApplied++
+		curEntry := se.log[se.lastApplied]
 		cm := curEntry.Command
 		if cm.Option == "write" {
-			rf.Persist.Put(cm.Key, cm.Value)
+			se.Persist.Put(cm.Key, cm.Value)
 			fmt.Printf("Write 命令：%s-%s 被apply\n", cm.Key, cm.Value)
 		} else if cm.Option == "read" {
 			fmt.Printf("Read 命令：key:%s 被apply\n", cm.Key)
 		}
+		/*
 		applyMsg := ApplyMsg{
 			true,
 			curEntry.Command,
-			int(rf.lastApplied),
+			int(se.lastApplied),
 		}
-		//rf.applyCh <- applyMsg
-		applyRequest(rf.applyCh, applyMsg)
+		applyRequest(se.applyCh, applyMsg)
+		 */
 	}
+}
+
+func (se *Secretary) MakeSecretary() {
+
+}
+
+
+func main() {
+	var add = flag.String("address", "", "servers's address")
+	var clu = flag.String("cluster", "", "whole cluster's address")
+	flag.Parse()
+	address := *add
+	cluster := strings.Split(*clu, ",")
+	se := &Secretary{
+		address: address,
+		cluster: cluster,
+	}
+
 }

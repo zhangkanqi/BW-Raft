@@ -2,40 +2,38 @@ package main
 
 import (
 	RPC "../RPC"
-	BWRAFT "../Raft"
+	BW_RAFT "../Raft"
 	PERSISTER "../persist"
 	"flag"
 	"fmt"
 	"golang.org/x/net/context"
-	"google.golang.org/genproto/googleapis/bigtable/admin/v2"
 	"google.golang.org/grpc"
 	"net"
 	"strings"
 	"sync"
 	"time"
 )
-
 type Server struct  {
 	address string
 	members[] string
 	secretaries[] string
 	observers[] string
 	mu *sync.Mutex
-	rf *BWRAFT.Raft
+	rf *BW_RAFT.BWRaft
 	persist *PERSISTER.Persister
 
 }
 
 func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.WriteReply, error) {
 
-	fmt.Printf("\n·····1····进入%s的WriteRequest处理端·········\n", sv.address)
+	fmt.Printf("\n·····1····进入cluster-%s 的WriteRequest处理端·········\n", sv.address)
 	reply := &RPC.WriteReply{}
 	_, reply.IsLeader = sv.rf.GetState()
 	if !reply.IsLeader {
 		fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
 		return reply, nil
 	}
-	request := RAFT.Op{
+	request := BW_RAFT.Op{
 		Key:    args.Key,
 		Value:  args.Value,
 		Option: "write",
@@ -50,39 +48,23 @@ func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.W
 	fmt.Printf("Server端--新指令的内容：%s %s %s, 新指令的index：%d\n", request.Option, request.Key, request.Value, index)
 	reply.IsLeader = true
 	reply.Success = true
-	fmt.Printf("·····2····%s的WriteRequest处理成功·········\n", sv.address)
+	fmt.Printf("·····2····%s的WriteRequest处理成功·········\n\n", sv.address)
 
 	return reply, nil
 }
 
+// Leader/Follower收到read请求时，直接处理，不进行日志复制
 func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.ReadReply, error) {
-	fmt.Printf("\n·····1····进入%s的ReadRequest处理端·········\n", sv.address)
+	fmt.Printf("\n·····1····进入cluster-%s的ReadRequest处理端·········\n", sv.address)
 	reply := &RPC.ReadReply{}
-	_, reply.IsLeader = sv.rf.GetState()
-	if !reply.IsLeader {
-		fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
-		return reply, nil
-	}
-	request := RAFT.Op{
-		Option:		"read",
-		Key:		args.Key,
-	}
-	index, _, isLeader := sv.rf.Start(request)
-	if !isLeader {
-		fmt.Printf("******* %s When read, Leader change!*****\n", sv.address)
-		reply.IsLeader = false
-		return reply, nil
-	}
-	reply.IsLeader = true
-	//apply := <- sv.applyCh
-	fmt.Printf("新指令的内容：%s %s, 新指令的index：%d\n", request.Option, request.Key, index)
 	//读取的内容
 	fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
-	fmt.Printf("·····2····%s的ReadRequest处理成功·········\n", sv.address)
+	fmt.Printf("·····2····%s的ReadRequest处理成功·········\n\n", sv.address)
 	return reply, nil
 }
 
 
+//50001
 func (sv *Server) registerServer(address string) {
 	// Client和集群成员交互 的Server端
 	fmt.Println("················集群成员注册服务器········")
@@ -125,7 +107,7 @@ func main() {
 	}
 
 	go sv.registerServer(sv.address+"1")
-	sv.rf = RAFT.MakeRaft(sv.address, sv.members, sv.persist, sv.mu)
+	sv.rf = BW_RAFT.MakeBWRaft(sv.address, sv.members, sv.persist, sv.mu) // 一直不会返回结果
 	time.Sleep(time.Minute * 2)
 }
 

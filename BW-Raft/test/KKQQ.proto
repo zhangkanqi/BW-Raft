@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message KKQQArgs {
+  string s = 1;
+}
+message KKQQReply {
+  bool success = 1;
+}
+service KKQQ {
+  rpc isKKQQ(KKQQArgs) returns (KKQQReply);
+}

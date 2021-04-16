@@ -102,6 +102,7 @@ func (rf *BWRaft) Start(command interface{}) (int32, int32, bool) {
 	return index, term, isLeader
 }
 
+// 5000 BWRaft
 func (rf *BWRaft) registerServer(address string) {
 	//BWRaft内部的Server端
 	server := grpc.NewServer()
@@ -116,6 +117,20 @@ func (rf *BWRaft) registerServer(address string) {
 	}
 }
 
+// 50002 Connect
+func (rf *BWRaft) registerServer2(address string) {
+	//BWRaft内部的Server端
+	server := grpc.NewServer()
+	RPC.RegisterConnectServer(server, rf)
+	lis, err1 := net.Listen("tcp", address)
+	if err1 != nil {
+		fmt.Println(err1)
+	}
+	err2 := server.Serve(lis)
+	if err2 != nil {
+		fmt.Println(err2)
+	}
+}
 
 func (rf *BWRaft) IsConnect (ctx context.Context, args *RPC.ConnectArgs) (*RPC.ConnectReply, error) {
 	// Connect RPC的server端
@@ -123,7 +138,7 @@ func (rf *BWRaft) IsConnect (ctx context.Context, args *RPC.ConnectArgs) (*RPC.C
 	return reply, nil
 }
 
-func MakeBWBWRaft(address string, members []string, persist *PERSISTER.Persister, mu *sync.Mutex, ) *BWRaft {
+func MakeBWRaft(address string, members []string, persist *PERSISTER.Persister, mu *sync.Mutex, ) *BWRaft {
 	BWRaft := &BWRaft{}
 	BWRaft.address = address
 	BWRaft.me = getMe(address)
@@ -183,7 +198,7 @@ func (rf *BWRaft) init() {
 	}()
 
 	go rf.registerServer(rf.address)
-
+	go rf.registerServer2(rf.address+"2")
 }
 
 
