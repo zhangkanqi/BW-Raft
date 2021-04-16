@@ -82,18 +82,16 @@ func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.Rea
 
 func (sv *Server) registerServer(address string) {
 	// Client和集群成员交互 的Server端
-	for {
-		fmt.Println("················进入外部注册服务器········")
-		lis, err1 := net.Listen("tcp", address)
-		if err1 != nil {
-			fmt.Println(err1)
-		}
-		server := grpc.NewServer()
-		RPC.RegisterServeServer(server, sv)
-		err2 := server.Serve(lis)
-		if err2 != nil {
-			fmt.Println(err2)
-		}
+	fmt.Println("················进入外部注册服务器········")
+	lis, err1 := net.Listen("tcp", address)
+	if err1 != nil {
+		fmt.Println(err1)
+	}
+	server := grpc.NewServer()
+	RPC.RegisterServeServer(server, sv)
+	err2 := server.Serve(lis)
+	if err2 != nil {
+		fmt.Println(err2)
 	}
 }
 

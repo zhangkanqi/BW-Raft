@@ -4,7 +4,7 @@
 // 	protoc        v3.14.0
 // source: KKQQ.proto
 
-package main
+package AK
 
 import (
 	context "context"
