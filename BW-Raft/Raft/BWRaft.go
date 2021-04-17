@@ -1,4 +1,4 @@
-package main
+package Raft
 
 import (
 	RPC "../RPC"
@@ -25,6 +25,7 @@ const (
 	Follower State = iota // Follower = 0
 	Candidate
 	Leader
+	Secretary
 )
 
 
@@ -52,6 +53,7 @@ type BWRaft struct {
 	me int32
 	address string
 	members []string //其他成员，包括自己
+	secretaries []string
 	role State
 
 	currentTerm int32
@@ -62,14 +64,17 @@ type BWRaft struct {
 	commitIndex int32
 	lastApplied int32
 
-	nextIndex []int32
-	matchIndex []int32
+	NextIndexf []int32
+	MatchIndexf []int32
+	nextIndexs []int32
+	matchIndexs []int32
 
 	voteCh chan bool
 	appendLogCh chan bool
 	killCh chan bool
 	applyCh chan ApplyMsg
 	replicateCh chan bool
+	secretaryAppenEntriesFromLeaderCh chan bool
 
 	Persist *PERSISTER.Persister
 }
@@ -96,8 +101,12 @@ func (rf *BWRaft) Start(command interface{}) (int32, int32, bool) {
 		}
 		rf.log = append(rf.log, newEntry)
 		fmt.Printf("Start()----新日志的Index：%d，term：%d，内容：%s, startAppendEntries\n", index, newEntry.Term, newEntry.Command)
+		//rf.startAppendEntries()
+		isLeader = rf.leaderAppendEntriesToSecretaries()
+		if !isLeader {
+			return index, term, isLeader
+		}
 		rf.startAppendEntries()
-
 	}
 	return index, term, isLeader
 }
@@ -138,22 +147,65 @@ func (rf *BWRaft) IsConnect (ctx context.Context, args *RPC.ConnectArgs) (*RPC.C
 	return reply, nil
 }
 
-func MakeBWRaft(address string, members []string, persist *PERSISTER.Persister, mu *sync.Mutex, ) *BWRaft {
+func MakeSecretary(address string, members []string, persist *PERSISTER.Persister, mu *sync.Mutex) {
 	BWRaft := &BWRaft{}
 	BWRaft.address = address
 	BWRaft.me = getMe(address)
 	BWRaft.members = members
 	BWRaft.Persist = persist
 	BWRaft.mu = mu
-	n := len(BWRaft.members)
+	fmt.Printf("当前节点Secretary:%s, 所有成员地址：\n", BWRaft.address)
+	for i, j := range BWRaft.members {
+		fmt.Println(i, j)
+	}
+	BWRaft.initSecretary()
+}
+
+func MakeBWRaft(address string, members []string, secretaries []string, persist *PERSISTER.Persister, mu *sync.Mutex) *BWRaft {
+	BWRaft := &BWRaft{}
+	BWRaft.address = address
+	BWRaft.me = getMe(address)
+	BWRaft.members = members
+	BWRaft.secretaries = secretaries
+	BWRaft.Persist = persist
+	BWRaft.mu = mu
 	fmt.Printf("当前节点:%s, rf.me=%d, 所有成员地址：\n", BWRaft.address, BWRaft.me)
-	for i := 0; i < n; i++ {
-		fmt.Println(BWRaft.members[i])
+	for i, j := range BWRaft.members {
+		fmt.Println(i, j)
+	}
+	fmt.Printf("所有secretary：\n")
+	for i, j := range BWRaft.secretaries {
+		fmt.Println(i, j)
 	}
 	BWRaft.init()
 	return BWRaft
 }
 
+func (rf *BWRaft) initSecretary() {
+	rf.role = Secretary
+	rf.currentTerm = 0
+	rf.log = make([]Entry, 1) // 日志索引从1开始
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+
+	rf.appendLogCh = make(chan bool, 1)
+	rf.applyCh = make(chan ApplyMsg, 1)
+	rf.secretaryAppenEntriesFromLeaderCh = make(chan bool, 1)
+
+	go func() {
+		for {
+			switch rf.role {
+			case Secretary:
+				select {
+				case <- rf.secretaryAppenEntriesFromLeaderCh:
+					rf.secretaryAppendEntriesToFollower()
+				}
+			}
+		}
+	}()
+
+	go rf.registerServer(rf.address)
+}
 
 func (rf *BWRaft) init() {
 	rf.role = Follower
@@ -310,6 +362,105 @@ func (rf *BWRaft) RequestVote(ctx context.Context, args *RPC.RequestVoteArgs) (*
 	return reply, nil
 }
 
+// leader发起
+func (rf *BWRaft) leaderAppendEntriesToSecretaries() bool { //返回isLeader
+	n := len(rf.secretaries)
+	for i := 0; i < n; i++ {
+		if rf.role != Leader {
+			return false
+		}
+		go func(idx int) {
+			for {
+				appendEntries := rf.log[rf.nextIndexs[idx]:] // 记得去更新NextIndexf，包含follower和secretary
+				if len(appendEntries) > 0 {
+					fmt.Printf("待追加日志长度appendEntries：%d 信息：term：%d cm:%s\n", len(appendEntries), appendEntries[0].Term, appendEntries[0].Command)
+				}
+				entries, _ := json.Marshal(appendEntries) // 转码
+				Nextf, _ := json.Marshal(rf.NextIndexf)
+				Matchf, _ := json.Marshal(rf.MatchIndexf)
+				args := &RPC.AppendEntriesArgs{ //prevLogIndex和prevLogTerm会因为冲突而改变，所以放在了for循环内
+					Term:          rf.currentTerm,
+					LeaderId:      rf.me,
+					PrevLogIndex:   rf.getPrevLogIndexs(idx),
+					PrevLogTerm:    rf.getPrevLogTerms(idx),
+					Entries:       entries,
+					LeaderCommit:  rf.commitIndex,
+					LastApplied:	rf.lastApplied,
+					NextIndexf:		Nextf,
+					MatchIndexf:	Matchf,
+				}
+				fmt.Printf("Leader %s --> Secretary %s  AppendEntries RPC\n", rf.address, rf.secretaries[idx])
+				ret, reply := rf.sendAppendEntries(rf.secretaries[idx], args)
+				if ret {
+					if reply.Term > rf.currentTerm {
+						rf.beFollower(reply.Term)
+						return
+					}
+					if rf.role != Leader || reply.Term != rf.currentTerm { //只处理最新term（rf.currentTerm）的数据
+						return
+					}
+					if reply.Success {
+						rf.matchIndexs[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，MatchIndexf=prevLogIndex
+						rf.nextIndexs[idx] = rf.matchIndexs[idx] + 1
+						fmt.Printf("Leader %s 向 Secretary %s 追加日志成功，nextIndexs[%s]=%d\n", rf.address, rf.secretaries[idx], rf.secretaries[idx], rf.nextIndexs[idx])
+						return
+					} else {
+						rf.nextIndexs[idx]--
+						fmt.Printf("日志不匹配，更新后nextIndexs[%s]=%d\n", rf.secretaries[idx], rf.nextIndexs[idx])
+					}
+				}
+			}
+		}(i)
+	}
+	return true
+}
+
+//secretary
+func (rf *BWRaft) secretaryAppendEntriesToFollower() {
+	fmt.Printf("############ Secretary %s 开始向Follower追加日志 ############\n", rf.address)
+	n := len(rf.members)
+	for i := 0; i < n; i++ {
+		go func(idx int) {
+			for { //因为会遇到冲突使NextIndexf--，所以不能只执行一次
+				appendEntries := rf.log[rf.NextIndexf[idx]:] // 刚开始是空的，为了维持自己的leader身份
+				fmt.Printf("待追加日志长度appendEntries：%d 信息：term：%d cm:%s\n", len(appendEntries), appendEntries[0].Term, appendEntries[0].Command)
+				entries, _ := json.Marshal(appendEntries) // 转码
+				args := &RPC.AppendEntriesArgs{ //prevLogIndex和prevLogTerm会因为冲突而改变，所以放在了for循环内
+					Term:          rf.currentTerm,
+					LeaderId:      rf.me,
+					PrevLogIndex:   rf.getPrevLogIndexf(idx),
+					PrevLogTerm:    rf.getPrevLogTermf(idx),
+					Entries:       entries,
+					LeaderCommit:  rf.commitIndex,
+				}
+				fmt.Printf("Secretary %s --> Follower %s  AppendEntries RPC\n", rf.address, rf.members[idx])
+				ret, reply := rf.sendAppendEntries(rf.members[idx], args)
+				if ret {
+					if reply.Term > rf.currentTerm {
+						return
+					}
+					if rf.role != Secretary || reply.Term != rf.currentTerm { //只处理最新term（rf.currentTerm）的数据
+						return
+					}
+					if reply.Success {
+						rf.MatchIndexf[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，MatchIndexf=prevLogIndex
+						rf.NextIndexf[idx] = rf.MatchIndexf[idx] + 1
+						if len(appendEntries) == 0 {
+							fmt.Printf("Secretary %s 向 Follower %s发送心跳包成功，NextIndexf[%s]=%d\n", rf.address, rf.members[idx], rf.members[idx], rf.NextIndexf[idx])
+						} else {
+							fmt.Printf("Secretary %s 向 Follower %s日志追加成功，NextIndexf[%s]=%d\n", rf.address, rf.members[idx], rf.members[idx], rf.NextIndexf[idx])
+						}
+						rf.updateCommitIndex()
+						return
+					} else {
+						rf.NextIndexf[idx]--
+						fmt.Printf("日志不匹配，更新后NextIndexf[%s]=%d\n", rf.members[idx], rf.NextIndexf[idx])
+					}
+				}
+			}
+		}(i)
+	}
+}
 
 
 func (rf *BWRaft) startAppendEntries() {
@@ -323,8 +474,8 @@ func (rf *BWRaft) startAppendEntries() {
 			continue
 		}
 		go func(idx int) {
-			for { //因为会遇到冲突使nextIndex--，所以不能只执行一次
-				appendEntries := rf.log[rf.nextIndex[idx]:] // 刚开始是空的，为了维持自己的leader身份
+			for { //因为会遇到冲突使NextIndexf--，所以不能只执行一次
+				appendEntries := rf.log[rf.NextIndexf[idx]:] // 刚开始是空的，为了维持自己的leader身份
 				if len(appendEntries) > 0 {
 					fmt.Printf("待追加日志长度appendEntries：%d 信息：term：%d cm:%s\n", len(appendEntries), appendEntries[0].Term, appendEntries[0].Command)
 				}
@@ -332,8 +483,8 @@ func (rf *BWRaft) startAppendEntries() {
 				args := &RPC.AppendEntriesArgs{ //prevLogIndex和prevLogTerm会因为冲突而改变，所以放在了for循环内
 					Term:          rf.currentTerm,
 					LeaderId:      rf.me,
-					PrevLogIndex:   rf.getPrevLogIndex(idx),
-					PrevLogTerm:    rf.getPrevLogTerm(idx),
+					PrevLogIndex:   rf.getPrevLogIndexf(idx),
+					PrevLogTerm:    rf.getPrevLogTermf(idx),
 					Entries:       entries,
 					LeaderCommit:  rf.commitIndex,
 				}
@@ -352,18 +503,18 @@ func (rf *BWRaft) startAppendEntries() {
 						return
 					}
 					if reply.Success {
-						rf.matchIndex[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，matchIndex=prevLogIndex
-						rf.nextIndex[idx] = rf.matchIndex[idx] + 1
+						rf.MatchIndexf[idx] = args.PrevLogIndex + int32(len(appendEntries)) // 刚开始日志还未复制，MatchIndexf=prevLogIndex
+						rf.NextIndexf[idx] = rf.MatchIndexf[idx] + 1
 						if len(appendEntries) == 0 {
-							fmt.Printf("向 %s 发送心跳包成功，nextIndex[%s]=%d\n", rf.members[idx], rf.members[idx], rf.nextIndex[idx])
+							fmt.Printf("向 %s 发送心跳包成功，NextIndexf[%s]=%d\n", rf.members[idx], rf.members[idx], rf.NextIndexf[idx])
 						} else {
-							fmt.Printf("向 %s 日志追加成功，nextIndex[%s]=%d\n", rf.members[idx], rf.members[idx], rf.nextIndex[idx])
+							fmt.Printf("向 %s 日志追加成功，NextIndexf[%s]=%d\n", rf.members[idx], rf.members[idx], rf.NextIndexf[idx])
 						}
 						rf.updateCommitIndex()
 						return
 					} else {
-						rf.nextIndex[idx]--
-						fmt.Printf("日志不匹配，更新后nextIndex[%s]=%d\n", rf.members[idx], rf.nextIndex[idx])
+						rf.NextIndexf[idx]--
+						fmt.Printf("日志不匹配，更新后NextIndexf[%s]=%d\n", rf.members[idx], rf.NextIndexf[idx])
 					}
 				}
 			}
@@ -390,15 +541,15 @@ func (rf *BWRaft) startAppendEntries() {
 */
 
 
-func (rf *BWRaft) updateCommitIndex()  { // 只由leader调用
-	n := len(rf.matchIndex)
+func (rf *BWRaft) updateCommitIndex()  {
+	n := len(rf.MatchIndexf)
 	for i := 0; i  < n; i++ {
-		fmt.Printf("matchIndex[%s]=%d\n", rf.members[i], rf.matchIndex[i])
+		fmt.Printf("MatchIndexf[%s]=%d\n", rf.members[i], rf.MatchIndexf[i])
 	}
-	copyMatchIndex := make([]int32, n)
-	copy(copyMatchIndex, rf.matchIndex)
-	sort.Sort(IntSlice(copyMatchIndex))
-	N := copyMatchIndex[n / 2] // 过半
+	copyMatchIndexf := make([]int32, n)
+	copy(copyMatchIndexf, rf.MatchIndexf)
+	sort.Sort(IntSlice(copyMatchIndexf))
+	N := copyMatchIndexf[n / 2] // 过半
 	fmt.Printf("过半的commitIndex：%d\n", N)
 	if N > rf.commitIndex && rf.log[N].Term == rf.currentTerm {
 		rf.commitIndex = N
@@ -407,6 +558,7 @@ func (rf *BWRaft) updateCommitIndex()  { // 只由leader调用
 	}
 }
 
+//Leader/secretary
 func (rf *BWRaft) updateLastApplied()  { // apply
 	fmt.Printf("updateLastApplied()---lastApplied: %d, commitIndex: %d\n", rf.lastApplied, rf.commitIndex)
 	for rf.lastApplied < rf.commitIndex { // 0 0
@@ -458,6 +610,7 @@ func (rf *BWRaft) sendAppendEntries(address string, args *RPC.AppendEntriesArgs)
 	return true, reply
 }
 
+//Secretary、Follower
 func (rf *BWRaft) AppendEntries(ctx context.Context, args *RPC.AppendEntriesArgs) (*RPC.AppendEntriesReply, error) {
 	// 发送者：args-Term
 	// 接收者：rf-currentTerm
@@ -498,11 +651,33 @@ func (rf *BWRaft) AppendEntries(ctx context.Context, args *RPC.AppendEntriesArgs
 	for i := 0; i < len(rf.log); i++ {
 		fmt.Printf("index:%d term:%d command:%s\n", i, rf.log[i].Term, rf.log[i].Command)
 	}
+
+	//一下用于secretary接收leader的RPC，更新信息，使secretary与leader同步
+	NextIndexf := make([]int32, len(rf.members))
+	MatchIndexf := make([]int32, len(rf.members))
+	err = json.Unmarshal(args.NextIndexf, &NextIndexf)
+	if err != nil {
+		fmt.Println(err)
+	}
+	err = json.Unmarshal(args.MatchIndexf, &MatchIndexf)
+	if err != nil {
+		fmt.Println(err)
+	}
+	rf.NextIndexf = NextIndexf
+	rf.MatchIndexf = MatchIndexf
+	for i, j := range rf.NextIndexf {
+		fmt.Println("接收到的NextIndex:", i, j)
+	}
+	rf.commitIndex = args.LeaderCommit
+	rf.lastApplied = args.LastApplied
+	//
+
 	if args.LeaderCommit > rf.commitIndex { // not 0 > 0
 		rf.commitIndex = Min(args.LeaderCommit, rf.getLastLogIndex())
-		rf.updateLastApplied() //在各自的存储引擎中存储相关的内容，在本此实现中，集群成员共用一个存储引擎，此处可以生省略。
+		rf.updateLastApplied()
 	}
 	send(rf.appendLogCh)
+	send(rf.secretaryAppenEntriesFromLeaderCh) // Leader成功向该secretary追加日志
 	reply.Success = true
 	return reply, nil
 }
@@ -538,12 +713,21 @@ func (rf *BWRaft) beLeader() {
 		return
 	}
 	rf.role = Leader
+
 	n := len(rf.members)
-	rf.nextIndex = make([]int32, n)
-	rf.matchIndex = make([]int32, n)
+	rf.NextIndexf = make([]int32, n)
+	rf.MatchIndexf = make([]int32, n)
 	for i := 0; i < n; i++ {
-		rf.nextIndex[i] = rf.getLastLogIndex()+1
-		fmt.Printf("beLeader---NextIndex[%s] = %d\n", rf.members[i], rf.nextIndex[i])
+		rf.NextIndexf[i] = rf.getLastLogIndex()+1
+		fmt.Printf("beLeader---NextIndexf[%s] = %d\n", rf.members[i], rf.NextIndexf[i])
+	}
+
+	m := len(rf.secretaries)
+	rf.nextIndexs = make([]int32, m)
+	rf.matchIndexs = make([]int32, m)
+	for i := 0; i < m; i++ {
+		rf.nextIndexs[i] = rf.getLastLogIndex()+1
+		fmt.Printf("beLeader---nextIndexs[%s] = %d\n", rf.secretaries[i], rf.nextIndexs[i])
 	}
 	fmt.Println(rf.address, "---------------become LEADER--------------", rf.currentTerm)
 
@@ -561,18 +745,31 @@ func (rf *BWRaft) getLastLogTerm() int32 {
 	return rf.log[index].Term
 }
 
-func (rf *BWRaft) getPrevLogIndex(i int) int32 {
-	// 每个peer对应的nextIndex会变，其相应的prevLogIndex也会变
-	fmt.Printf("NextIndex[%s] = %d, prevLogIndex=%d\n", rf.members[i], rf.nextIndex[i], rf.nextIndex[i]-1)
-	return rf.nextIndex[i]-1 //
+func (rf *BWRaft) getPrevLogIndexf(i int) int32 {
+	// 每个peer对应的NextIndexf会变，其相应的prevLogIndex也会变
+	fmt.Printf("NextIndexf[%s] = %d, prevLogIndexf=%d\n", rf.members[i], rf.NextIndexf[i], rf.NextIndexf[i]-1)
+	return rf.NextIndexf[i]-1 //
 }
 
-func (rf *BWRaft) getPrevLogTerm(i int) int32 {
-	prevLogIndex := rf.getPrevLogIndex(i)
-	fmt.Printf("########prevLogIndex:%d########\n", prevLogIndex)
-	fmt.Printf("########prevLogIndexTerm:%d########\n", rf.log[prevLogIndex].Term)
+func (rf *BWRaft) getPrevLogIndexs(i int) int32 {
+	fmt.Printf("nextIndexs[%s] = %d, prevLogIndexs=%d\n", rf.secretaries[i], rf.nextIndexs[i], rf.nextIndexs[i]-1)
+	return rf.nextIndexs[i]-1 //
+}
+
+func (rf *BWRaft) getPrevLogTermf(i int) int32 {
+	prevLogIndex := rf.getPrevLogIndexf(i)
+	fmt.Printf("########prevLogIndexf:%d########\n", prevLogIndex)
+	fmt.Printf("########prevLogIndexTermf:%d########\n", rf.log[prevLogIndex].Term)
 	return rf.log[prevLogIndex].Term
 }
+
+func (rf *BWRaft) getPrevLogTerms(i int) int32 {
+	prevLogIndex := rf.getPrevLogIndexs(i)
+	fmt.Printf("########prevLogIndexs:%d########\n", prevLogIndex)
+	fmt.Printf("########prevLogIndexTerms:%d########\n", rf.log[prevLogIndex].Term)
+	return rf.log[prevLogIndex].Term
+}
+
 
 func (rf *BWRaft) GetState() (int32, bool) {
 	term := rf.currentTerm

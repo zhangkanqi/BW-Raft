@@ -20,6 +20,7 @@ type Client struct {
 	leaderId int
 }
 
+// 50001 WriteRequest
 func (ct *Client) sendWriteRequest(address string, args *RPC.WriteArgs) (bool, *RPC.WriteReply) {
 	// WriteRequest 的 Client端 拨号
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
@@ -65,6 +66,7 @@ func (ct *Client) Write(key, value string) {
 	ct.leaderId = id
 }
 
+//50001 ReadRequest
 func (ct *Client) sendReadRequest(address string, args *RPC.ReadArgs) (bool, *RPC.ReadReply) {
 	// ReadRequest 的 Client端， 拨号
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
@@ -125,11 +127,9 @@ func (ct *Client) startReadRequest() {
 
 func main() {
 	var clu = flag.String("cluster", "", "all cluster members' address")
-	var sec = flag.String("secretaries", "", "all secretaries")
 	var ob = flag.String("observers", "", "all observers")
 	flag.Parse()
 	cluster := strings.Split(*clu, ",")
-	secretaries := strings.Split(*sec, ",")
 	observers := strings.Split(*ob, ",")
 
 	fmt.Println("集群成员：")
@@ -153,5 +153,5 @@ func main() {
 	ct.readCluster = append(ct.readCluster, observers...)
 
 	ct.startWriteRequest()
-	ct.startReadRequest()
+	//ct.startReadRequest()
 }

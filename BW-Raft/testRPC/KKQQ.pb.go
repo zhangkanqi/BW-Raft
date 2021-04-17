@@ -4,7 +4,7 @@
 // 	protoc        v3.14.0
 // source: KKQQ.proto
 
-package AK
+package testRPC
 
 import (
 	context "context"

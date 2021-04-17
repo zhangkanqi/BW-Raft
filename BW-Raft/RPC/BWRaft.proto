@@ -18,7 +18,11 @@ message AppendEntriesArgs {
   int32 prevLogIndex = 3;
   int32 prevLogTerm = 4;
   bytes entries = 5;
+  //以下Leader专有
   int32 leaderCommit = 6;
+  int32 lastApplied = 7;
+  bytes nextIndexf = 8;
+  bytes matchIndexf = 9;
 }
 
 message AppendEntriesReply {

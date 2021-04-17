@@ -94,7 +94,7 @@ func main() {
 	persist := &PERSISTER.Persister{}
 	//persist.Init("../db"+address+string(time.Now().Unix()))
 	dbAddress := "db"+address+time.Now().Format("20060102")
-	fmt.Printf("~~~~~新建存储地址：%s \n", dbAddress)
+	fmt.Printf("~~~~~新建存储地址：%s\n", dbAddress)
 	persist.Init("../db"+address+time.Now().Format("20060102"))
 	//persist.Init(dbAddress)
 
@@ -107,7 +107,7 @@ func main() {
 	}
 
 	go sv.registerServer(sv.address+"1")
-	sv.rf = BW_RAFT.MakeBWRaft(sv.address, sv.members, sv.persist, sv.mu) // 一直不会返回结果
+	sv.rf = BW_RAFT.MakeBWRaft(sv.address, sv.members, sv.secretaries, sv.persist, sv.mu) // 一直不会返回结果
 	time.Sleep(time.Minute * 2)
 }
 
