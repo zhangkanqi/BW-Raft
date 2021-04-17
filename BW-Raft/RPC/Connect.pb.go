@@ -4,7 +4,7 @@
 // 	protoc        v3.14.0
 // source: Connect.proto
 
-package Connect
+package RPC
 
 import (
 	context "context"

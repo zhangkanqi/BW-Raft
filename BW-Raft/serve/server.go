@@ -1,7 +1,7 @@
 package main
 
 import (
-	RPC "../RPC"
+	"../RPC"
 	BW_RAFT "../Raft"
 	PERSISTER "../persist"
 	"flag"

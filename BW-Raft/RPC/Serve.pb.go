@@ -4,7 +4,7 @@
 // 	protoc        v3.14.0
 // source: Serve.proto
 
-package Serve
+package RPC
 
 import (
 	context "context"

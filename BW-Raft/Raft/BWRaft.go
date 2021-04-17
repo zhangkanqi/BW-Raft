@@ -1,7 +1,7 @@
 package Raft
 
 import (
-	RPC "../RPC"
+	"../RPC"
 	PERSISTER "../persist"
 	"context"
 	"encoding/json"

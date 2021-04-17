@@ -4,7 +4,7 @@
 // 	protoc        v3.14.0
 // source: BWRaft.proto
 
-package BWRaft
+package RPC
 
 import (
 	context "context"

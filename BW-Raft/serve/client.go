@@ -1,7 +1,7 @@
 package main
 
 import (
-	RPC "../RPC"
+	"../RPC"
 	"context"
 	"flag"
 	"fmt"
