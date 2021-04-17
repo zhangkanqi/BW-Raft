@@ -89,5 +89,5 @@ func main() {
 		cluster: cluster,
 	}
 	ob.registerServer(address+"1")
-	//time.Sleep(time.Minute * 2)
+	time.Sleep(time.Minute * 2)
 }

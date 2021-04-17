@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-
-
 func main() {
 	var add = flag.String("address", "", "servers's address")
 	var clu = flag.String("cluster", "", "whole cluster's address")
@@ -22,4 +20,6 @@ func main() {
 	persist.Init("../db"+address+time.Now().Format("20060102"))
 
 	BWRAFT.MakeSecretary(address, cluster, persist, &sync.Mutex{})
+	time.Sleep(time.Minute*2)
+	//time.Sleep(time.Second*10)
 }
