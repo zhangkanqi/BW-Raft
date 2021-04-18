@@ -2,12 +2,10 @@ syntax = "proto3";
 
 message KKQQArgs {
   string s = 1;
-  bytes pointer = 2;
 
 }
 message KKQQReply {
   bool success = 1;
-  bytes pointer = 2;
 }
 service KKQQ {
   rpc isKKQQ(KKQQArgs) returns (KKQQReply);
