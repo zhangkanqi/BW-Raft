@@ -1,7 +1,7 @@
 package main
 
 import (
-	PERSISTER "../persist"
+	PERSISTER "../../persist"
 	"encoding/json"
 	"fmt"
 	"time"
