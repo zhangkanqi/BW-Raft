@@ -65,7 +65,7 @@ func main() {
 	for i, j := range c {
 		fmt.Println(i, j)
 	}
-	/*
+
 	p := &PERSISTER.Persister{}
 	p.Init("../db"+address+time.Now().Format("20060102"))
 	p.Put("1", "1")
@@ -74,7 +74,7 @@ func main() {
 	fmt.Printf("p: key:%s-value:%s\n", "2", p.Get("2"))
 	//一次只允许一个进程访问一个特定的数据库
 	p.Close()
-	*/
+
 
 	q := &PERSISTER.Persister{}
 	q.Init("../db"+address+time.Now().Format("20060102"))

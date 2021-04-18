@@ -1,11 +1,8 @@
 package main
 
 import (
-	PERSIST "../persist"
 	"../testRPC"
 	"context"
-	"encoding/json"
-	"fmt"
 	"google.golang.org/grpc"
 	"net"
 )
@@ -14,13 +11,8 @@ type AA struct {
 
 }
 func (aa *AA) IsKKQQ(ctx context.Context, agrs *testRPC.KKQQArgs) (*testRPC.KKQQReply, error) {
-	p := &PERSIST.Persister{}
-	err := json.Unmarshal(agrs.Pointer, p)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("q: key:%s-value:%s\n", "2", p.Get("2"))
-	reply := &testRPC.KKQQReply{}
+
+	reply := &testRPC.KKQQReply{Success:true}
 	return reply, nil
 }
 func main() {

@@ -1,10 +1,8 @@
 package main
 
 import (
-	PERSIST "../persist"
 	"../testRPC"
 	"context"
-	"encoding/json"
 	"fmt"
 	"google.golang.org/grpc"
 	"time"
@@ -26,12 +24,9 @@ func main() {
 	}()
 	client := testRPC.NewKKQQClient(conn)
 
-	p := PERSIST.Persister{}
-	p.Init("../db102:21:21:45:5000"+time.Now().Format("20060102"))
-	po, _ := json.Marshal(p)
-	args := &testRPC.KKQQArgs{S: "ss", Pointer:po}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
+	args := &testRPC.KKQQArgs{S: "ss"}
+	// 2ms
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
 	defer cancel()
 	reply, err := client.IsKKQQ(ctx, args)
 	t2 := time.Now().UnixNano()
