@@ -18,6 +18,8 @@ message AppendEntriesArgs {
   int32 prevLogIndex = 3;
   int32 prevLogTerm = 4;
   bytes entries = 5;
+  string role = 10;
+  string address = 11;
   //以下Leader专有
   int32 leaderCommit = 6;
   int32 lastApplied = 7;

@@ -56,7 +56,9 @@ func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.W
 // Leader/Follower收到read请求时，直接处理，不进行日志复制
 func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.ReadReply, error) {
 	fmt.Printf("\n·····1····进入cluster-%s的ReadRequest处理端·········\n", sv.address)
-	reply := &RPC.ReadReply{}
+	reply := &RPC.ReadReply{
+		Value:sv.rf.Persist.Get(args.Key),
+	}
 	//读取的内容
 	fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
 	fmt.Printf("·····2····%s的ReadRequest处理成功·········\n\n", sv.address)

@@ -16,7 +16,6 @@ type Client struct {
 	cluster[] string
 	sectary[] string
 	readCluster[] string
-	writeCluster[] string
 	leaderId int
 }
 
@@ -95,6 +94,7 @@ func (ct *Client) Read(key string) {
 	for i := 0; i < n; i++ {
 		rand.Seed(time.Now().UnixNano())
 		id := (i + rand.Intn(n)) % n
+		fmt.Printf("Client send ReadRequest to %s\n", ct.readCluster[id])
 		ret, reply := ct.sendReadRequest(ct.readCluster[id], args) // 50001端口
 		if ret {
 			fmt.Printf("读取到的内容：%s-%s\n", args.Key, reply.Value)
@@ -104,23 +104,26 @@ func (ct *Client) Read(key string) {
 }
 
 func (ct *Client) startWriteRequest() {
-	num := 5 // 最简单5个write 5个read
+	num := 15 // 最简单5个write 5个read
 	var key, value string
 	for i := 0; i < num; i++ {
 		key = strconv.Itoa(i+1)
 		value = strconv.Itoa(i+1)
 		fmt.Printf("	·······start write %s-%s········\n", key, value)
 		ct.Write(key, value)
+		//等待上一个write命令运行完，否则并行执行appendEntries时，可能会出现数组越界的情况
+		time.Sleep(time.Millisecond*10)
 	}
 }
 
 func (ct *Client) startReadRequest() {
-	num := 5 // 最简单5个write 5个read
+	num := 15 // 最简单5个write 5个read
 	var key string
 	for i := 0; i < num; i++ {
 		key = strconv.Itoa(i+1)
 		fmt.Printf("	·······start read key：%s········\n", key)
 		ct.Read(key)
+		//time.Sleep(time.Millisecond*50)
 	}
 }
 
@@ -153,5 +156,6 @@ func main() {
 	ct.readCluster = append(ct.readCluster, observers...)
 
 	ct.startWriteRequest()
-	//ct.startReadRequest()
+	//time.Sleep(time.Millisecond*1000)
+	ct.startReadRequest()
 }

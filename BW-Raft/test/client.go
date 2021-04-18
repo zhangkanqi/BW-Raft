@@ -1,8 +1,10 @@
 package main
 
 import (
+	PERSIST "../persist"
 	"../testRPC"
 	"context"
+	"encoding/json"
 	"fmt"
 	"google.golang.org/grpc"
 	"time"
@@ -10,7 +12,8 @@ import (
 
 func main() {
 	t1 := time.Now().UnixNano()
-	address := "192.168.8.6:5000"
+	//address := "192.168.8.6:5000"
+	address := "localhost:8090"
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(err.Error())
@@ -22,8 +25,13 @@ func main() {
 		}
 	}()
 	client := testRPC.NewKKQQClient(conn)
-	args := &testRPC.KKQQArgs{S: "ss"}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*20)
+
+	p := PERSIST.Persister{}
+	p.Init("../db102:21:21:45:5000"+time.Now().Format("20060102"))
+	po, _ := json.Marshal(p)
+	args := &testRPC.KKQQArgs{S: "ss", Pointer:po}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 	reply, err := client.IsKKQQ(ctx, args)
 	t2 := time.Now().UnixNano()
