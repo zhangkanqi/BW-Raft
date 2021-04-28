@@ -111,6 +111,8 @@ func (rf *BWRaft) Start(command interface{}) (int32, int32, bool) {
 		rf.log = append(rf.log, newEntry)
 		fmt.Printf("Start()----新日志的Index：%d，term：%d，内容：%s, startAppendEntries\n", index, newEntry.Term, newEntry.Command)
 		//rf.startAppendEntries()
+		rf.Detector()
+		rf.broadcastByzAndSus()
 		isLeader = rf.leaderAppendEntriesToSecretaries()
 		if !isLeader {
 			return index, term, isLeader
@@ -213,6 +215,8 @@ func (rf *BWRaft) initSecretary() {
 			case Secretary:
 				select {
 				case <- rf.secretaryAppenEntriesFromLeaderCh:
+					rf.Detector()
+					rf.broadcastByzAndSus()
 					rf.secretaryAppendEntriesToFollower()
 				}
 			}
@@ -258,6 +262,8 @@ func (rf *BWRaft) init() {
 					rf.beCandidate()
 				}
 			case Leader:
+				rf.Detector()
+				rf.broadcastByzAndSus()
 				rf.startAppendEntries()
 				fmt.Printf("--------sleep heartbeat time------\n")
 				time.Sleep(heartbeatTime)
