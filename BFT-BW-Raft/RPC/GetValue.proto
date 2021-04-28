@@ -1,0 +1,16 @@
+syntax = "proto3";
+package RPC;
+
+message GetValueArgs {
+  string key = 1;
+}
+
+message GetValueReply {
+  bool success = 1;
+  string value = 2;
+}
+
+
+service GetValue {
+  rpc getValue(GetValueArgs) returns (GetValueReply);
+}
