@@ -2,8 +2,8 @@ package persist
 
 import (
 	"fmt"
-	"github.com/syndtr/goleveldb/leveldb"
-	"log"
+"github.com/syndtr/goleveldb/leveldb"
+"log"
 )
 
 type Persister struct {
@@ -46,15 +46,3 @@ func (p *Persister) PrintStrVal(key string) {
 	value := p.Get(key)
 	fmt.Println(value)
 }
-
-// Test1 leveldb
-//func main() {
-//	p := &Persister{}
-//	p.Init("../KV-Raft")
-//	p.Put("1", "a")
-//	fmt.Println(p.Get("1"))
-//	err := p.db.Close()
-//	if err != nil {
-//		log.Fatalln(err)
-//	}
-//}

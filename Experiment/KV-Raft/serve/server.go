@@ -5,7 +5,7 @@ import (
 	RAFT "../Raft"
 	PERSISTER "../persist"
 	"flag"
-	"fmt"
+	//"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"net"
@@ -25,11 +25,11 @@ type Server struct  {
 
 func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.WriteReply, error) {
 
-	fmt.Printf("\n·····1····进入%s的WriteRequest处理端·········\n", sv.address)
+	//fmt.Printf("\n·····1····进入%s的WriteRequest处理端·········\n", sv.address)
 	reply := &RPC.WriteReply{}
 	_, reply.IsLeader = sv.rf.GetState()
 	if !reply.IsLeader {
-		fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
+		//fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
 		return reply, nil
 	}
 	request := RAFT.Op{
@@ -37,61 +37,63 @@ func (sv *Server) WriteRequest(ctx context.Context, args *RPC.WriteArgs) (*RPC.W
 		Value:  args.Value,
 		Option: "write",
 	}
-	index, _, isLeader := sv.rf.Start(request)
+	//index, _, isLeader := sv.rf.Start(request)
+	_, _, isLeader := sv.rf.Start(request)
 	if !isLeader {
-		fmt.Printf("******* %s When write, Leader change!*****\n", sv.address)
+		//fmt.Printf("******* %s When write, Leader change!*****\n", sv.address)
 		reply.IsLeader = false
 		return reply, nil
 	}
 	//apply := <- sv.applyCh
-	fmt.Printf("Server端--新指令的内容：%s %s %s, 新指令的index：%d\n", request.Option, request.Key, request.Value, index)
+	//fmt.Printf("Server端--新指令的内容：%s %s %s, 新指令的index：%d\n", request.Option, request.Key, request.Value, index)
 	reply.IsLeader = true
 	reply.Success = true
-	fmt.Printf("·····2····%s的WriteRequest处理成功·········\n", sv.address)
+	//fmt.Printf("·····2····%s的WriteRequest处理成功·········\n", sv.address)
 
 	return reply, nil
 }
 
 func (sv *Server) ReadRequest(ctx context.Context, args *RPC.ReadArgs) (*RPC.ReadReply, error) {
-	fmt.Printf("\n·····1····进入%s的ReadRequest处理端·········\n", sv.address)
+	//fmt.Printf("\n·····1····进入%s的ReadRequest处理端·········\n", sv.address)
 	reply := &RPC.ReadReply{}
 	_, reply.IsLeader = sv.rf.GetState()
 	if !reply.IsLeader {
-		fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
+		//fmt.Printf("\n·········%s 不是leader，return false·········\n", sv.address)
 		return reply, nil
 	}
 	request := RAFT.Op{
 		Option:		"read",
 		Key:		args.Key,
 	}
-	index, _, isLeader := sv.rf.Start(request)
+	//index, _, isLeader := sv.rf.Start(request)
+	_, _, isLeader := sv.rf.Start(request)
 	if !isLeader {
-		fmt.Printf("******* %s When read, Leader change!*****\n", sv.address)
+		//fmt.Printf("******* %s When read, Leader change!*****\n", sv.address)
 		reply.IsLeader = false
 		return reply, nil
 	}
 	reply.IsLeader = true
 	//apply := <- sv.applyCh
-	fmt.Printf("新指令的内容：%s %s, 新指令的index：%d\n", request.Option, request.Key, index)
+	//fmt.Printf("新指令的内容：%s %s, 新指令的index：%d\n", request.Option, request.Key, index)
 	//读取的内容
-	fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
-	fmt.Printf("·····2····%s的ReadRequest处理成功·········\n", sv.address)
+	//fmt.Printf("读取到的内容：%s\n", sv.rf.Persist.Get(args.Key))
+	//fmt.Printf("·····2····%s的ReadRequest处理成功·········\n", sv.address)
 	return reply, nil
 }
 
 
 func (sv *Server) registerServer(address string) {
 	// Client和集群成员交互 的Server端
-	fmt.Println("················进入外部注册服务器········")
+	//fmt.Println("················进入外部注册服务器········")
 	lis, err1 := net.Listen("tcp", address)
 	if err1 != nil {
-		fmt.Println(err1)
+		//fmt.Println(err1)
 	}
 	server := grpc.NewServer()
 	RPC.RegisterServeServer(server, sv)
 	err2 := server.Serve(lis)
 	if err2 != nil {
-		fmt.Println(err2)
+		//fmt.Println(err2)
 	}
 }
 

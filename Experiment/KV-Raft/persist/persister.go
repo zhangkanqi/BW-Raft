@@ -30,7 +30,7 @@ func (p *Persister) Put(key string, value string) {
 func (p *Persister) Get(key string) string {
 	value, err := p.db.Get([]byte(key), nil)
 	if err != nil {
-		log.Fatalln(err)
+		return ""
 	}
 	return string(value)
 }
@@ -47,7 +47,7 @@ func (p *Persister) PrintStrVal(key string) {
 	fmt.Println(value)
 }
 
-// Test1 leveldb
+// Test leveldb
 //func main() {
 //	p := &Persister{}
 //	p.Init("../KV-Raft")

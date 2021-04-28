@@ -948,7 +948,8 @@ func (rf *BWRaft) addSuspicion(rec map[string]bool) {
 	for _, address := range rf.detectAdd {
 		if _, ok := rec[address]; !ok {
 			rf.suspicion = append(rf.suspicion, address)
-			rf.cntSuspicion[address] = 1
+			//rf.cntSuspicion[address] = 1
+			rf.set(address)
 		}
 	}
 }
@@ -1010,7 +1011,8 @@ func (rf *BWRaft) UpdateByzantine(ctx context.Context, args *RPC.BroadcastByzArg
 	//根据suspicion更新自己的byz信息
 	f := len(rf.byzantine)
 	for _, add := range receiveSus {
-		rf.cntSuspicion[add]++
+		//rf.cntSuspicion[add]++
+		rf.set(add)
 		if rf.cntSuspicion[add] >= f+1 {
 			rf.byzantine = append(rf.byzantine, add)
 		}
@@ -1061,7 +1063,8 @@ func (rf *BWRaft) broadcastByzAndSus() {
 				//由统计到的suspicion数更新已知的拜占庭节点
 				f := len(rf.byzantine)
 				for _, add := range receiveSus {
-					rf.cntSuspicion[add]++
+					//rf.cntSuspicion[add]++
+					rf.set(add)
 					if rf.cntSuspicion[add] >= f+1 {
 						mp[add] = true
 						rf.byzantine = append(rf.byzantine, add)
@@ -1073,4 +1076,13 @@ func (rf *BWRaft) broadcastByzAndSus() {
 		}(address)
 	}
 	return
+}
+
+func (rf *BWRaft) set(key string) {
+	
+	if rf.cntSuspicion ==  nil {
+		rf.cntSuspicion = make(map[string]int)
+		rf.cntSuspicion[key] = 1
+	}
+	rf.cntSuspicion[key]++
 }

@@ -1,0 +1,27 @@
+syntax = "proto3";
+package RPC;
+
+message DetectArgs {
+  int32 value = 1;
+}
+
+message DetectReply {
+  string address = 1;
+  int32 value = 2;
+  bool success = 3;
+}
+
+message BroadcastByzArgs {
+  bytes sendByzantine = 1;
+  bytes sendSuspicion = 2;
+}
+
+message BroadcastByzRely {
+  bytes receiveByzantine = 1;
+  bytes receiveSuspicion = 2;
+}
+
+service Detect {
+  rpc DetectByzantine(DetectArgs) returns (DetectReply);
+  rpc UpdateByzantine(BroadcastByzArgs) returns (BroadcastByzRely);
+}

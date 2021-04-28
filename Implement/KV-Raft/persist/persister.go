@@ -47,7 +47,7 @@ func (p *Persister) PrintStrVal(key string) {
 	fmt.Println(value)
 }
 
-// Test1 leveldb
+// Test leveldb
 //func main() {
 //	p := &Persister{}
 //	p.Init("../KV-Raft")
