@@ -81,7 +81,8 @@ type BWRaft struct {
 	applyCh chan ApplyMsg
 	replicateCh chan bool
 	secretaryAppenEntriesFromLeaderCh chan bool
-	DetectCh chan bool
+	detectCh chan bool
+	updateByzCh chan bool
 
 	Persist *PERSISTER.Persister
 }
@@ -737,15 +738,16 @@ func (rf *BWRaft) beCandidate() {
 	rf.votedFor = rf.me
 	rf.electionTime = time.Duration(rand.Intn(350)+500) * time.Millisecond
 	fmt.Println(rf.address, " become Candidate, new Term: ", rf.currentTerm)
-	rf.Detector()
-	rf.broadcastByzAndSus()
-	rf.startElection() // 加不加go？
+	//rf.Detector()
+	//rf.broadcastByzAndSus()
+	rf.startElection()
 }
 
 
 func (rf *BWRaft) beFollower(term int32) {
 	rf.role = Follower
 	rf.votedFor = NULL
+
 	rf.currentTerm = term
 }
 
@@ -863,8 +865,18 @@ func (rf *BWRaft) DetectByzantine(ctx context.Context, args *RPC.DetectArgs) (*R
 	return reply, nil
 }
 
+
+func (rf *BWRaft) initDetector() {
+	rf.byzantine = []string{}
+	rf.cntSuspicion = map[string]int{}
+	rf.suspicion = []string{}
+	rf.reception = []string{}
+	fmt.Printf("init之后：byz:%d cnt:%d sus:%d rec:%d\n", len(rf.byzantine), len(rf.cntSuspicion), len(rf.suspicion), len(rf.reception))
+}
+
 func (rf *BWRaft) sendDetection(address string, args *RPC.DetectArgs) (bool, *RPC.DetectReply) {
 	// Detect RPC 中的Client端
+	fmt.Printf("向%s拨号\n", address)
 	conn, err1 := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err1 != nil {
 		fmt.Println(err1)
@@ -877,28 +889,23 @@ func (rf *BWRaft) sendDetection(address string, args *RPC.DetectArgs) (bool, *RP
 	}()
 	client := RPC.NewDetectClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	fmt.Printf("-----\n")
 	defer cancel()
 	reply, err3 := client.DetectByzantine(ctx, args)
-	if err3 != nil {
+	if reply == nil {
 		fmt.Println("接收DetectByzantine结果失败:",err3)
 		return false, reply
+	} else {
+		fmt.Printf("接收到了Detect的消息\n")
 	}
 	return true, reply
-}
-
-func (rf *BWRaft) initDetector() {
-	rf.byzantine = []string{}
-	rf.cntSuspicion = map[string]int{}
-	rf.suspicion = []string{}
-	rf.reception = []string{}
-	fmt.Printf("init之后：byz:%d cnt:%d sus:%d rec:%d\n", len(rf.byzantine), len(rf.cntSuspicion), len(rf.suspicion), len(rf.reception))
 }
 
 func (rf *BWRaft) Detector() {
 	rf.initDetector()
 	var reception int32  = 0
 	m := len(rf.detectAdd)
-	quorum := int32(m/2)
+	quorum := int32(m*2/3)
 	rec := make(map[string]bool)
 	args := &RPC.DetectArgs{Value:rf.me}
 	for _, address := range rf.detectAdd {
@@ -910,24 +917,24 @@ func (rf *BWRaft) Detector() {
 		}
 		go func (add string) {
 			fmt.Printf("%s向%s发送检测消息\n", rf.address, add)
-			ret, reply := rf.sendDetection(address+"3", args)
+			ret, reply := rf.sendDetection(add+"3", args)
 			if ret {
 				rf.reception = append(rf.reception, add)
 				rec[add] = true
 				fmt.Printf("%s接收到%s返回的检测消息：%d %s\n", rf.address, add, reply.Value, reply.Address)
 				atomic.AddInt32(&reception, 1)
 				//检测出拜占庭行为
-				if (reply.Value != args.Value || reply.Address != address) && reply.Success == true {
-					rf.byzantine = append(rf.byzantine, address)
+				if (reply.Value != args.Value || reply.Address != add) && reply.Success == true {
+					rf.byzantine = append(rf.byzantine, add)
 				}
 				return
 			} else {
-				fmt.Printf("%s未成功接收%s的DetectByzantine返回消息\n", rf.address, address)
+				fmt.Printf("%s未成功接收%s的DetectByzantine返回消息\n", rf.address, add)
 				return
 			}
 		}(address)
 	}
-	rf.addSuspicion(rec)
+	go rf.addSuspicion(rec)
 	return
 }
 
@@ -1017,45 +1024,47 @@ func (rf *BWRaft) broadcastByzAndSus() {
 		if address == rf.address {
 			continue
 		}
-		byz, _ := json.Marshal(rf.byzantine)
-		sus, _ := json.Marshal(rf.suspicion)
-		args := &RPC.BroadcastByzArgs{
-			SendByzantine:	byz,
-			SendSuspicion:	sus,
-		}
+		go func (add string) {
+			byz, _ := json.Marshal(rf.byzantine)
+			sus, _ := json.Marshal(rf.suspicion)
+			args := &RPC.BroadcastByzArgs{
+				SendByzantine:	byz,
+				SendSuspicion:	sus,
+			}
 
-		fmt.Printf("%s向%s广播byz和sus节点\n", rf.address, address)
-		ret, reply := rf.sendBroadcastByz(address+"3", args)
-		if ret {
-			var receiveByz []string
-			var receiveSus []string
-			err := json.Unmarshal(reply.ReceiveByzantine, &receiveByz)
-			if err != nil {
-				fmt.Println(err)
-			}
-			err = json.Unmarshal(reply.ReceiveSuspicion, &receiveSus)
-			if err != nil {
-				fmt.Println(err)
-			}
-			//更新自己已知的拜占庭节点
-			for _, add := range receiveByz {
-				if _, ok := mp[add]; !ok {
-					mp[add] = true
-					rf.byzantine = append(rf.byzantine, add)
+			fmt.Printf("%s向%s广播byz和sus节点\n", rf.address, add)
+			ret, reply := rf.sendBroadcastByz(add+"3", args)
+			if ret {
+				var receiveByz []string
+				var receiveSus []string
+				err := json.Unmarshal(reply.ReceiveByzantine, &receiveByz)
+				if err != nil {
+					fmt.Println(err)
 				}
-			}
-			//由统计到的suspicion数更新已知的拜占庭节点
-			f := len(rf.byzantine)
-			for _, add := range receiveSus {
-				rf.cntSuspicion[add]++
-				if rf.cntSuspicion[add] >= f+1 {
-					mp[add] = true
-					rf.byzantine = append(rf.byzantine, add)
+				err = json.Unmarshal(reply.ReceiveSuspicion, &receiveSus)
+				if err != nil {
+					fmt.Println(err)
 				}
+				//更新自己已知的拜占庭节点
+				for _, add := range receiveByz {
+					if _, ok := mp[add]; !ok {
+						mp[add] = true
+						rf.byzantine = append(rf.byzantine, add)
+					}
+				}
+				//由统计到的suspicion数更新已知的拜占庭节点
+				f := len(rf.byzantine)
+				for _, add := range receiveSus {
+					rf.cntSuspicion[add]++
+					if rf.cntSuspicion[add] >= f+1 {
+						mp[add] = true
+						rf.byzantine = append(rf.byzantine, add)
+					}
+				}
+			} else {
+				fmt.Printf("%s未成功接收%s的UpdateByzantine返回消息\n", rf.address, add)
 			}
-		} else {
-			fmt.Printf("%s未成功接收%s的UpdateByzantine返回消息\n", rf.address, address)
-		}
+		}(address)
 	}
 	return
 }
