@@ -135,8 +135,8 @@ func end(clientNum, operationNum int32) {
 	for {
 		if count == clientNum * operationNum {
 			end :=  time.Now().UnixNano()
-			fmt.Printf("%d个请求处理完成，用时%dns\n", clientNum * operationNum, end-start)
-			fmt.Printf("平均每个操作用时%dns\n", (end-start)/int64(clientNum * operationNum))
+			fmt.Printf("%d个请求处理完成，用时%dms\n", clientNum * operationNum, (end-start)/1e3)
+			fmt.Printf("平均每个操作用时%dms\n", (end-start)/int64(1e3*clientNum*operationNum))
 			return
 		}
 	}

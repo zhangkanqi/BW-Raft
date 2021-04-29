@@ -106,7 +106,7 @@ func (rf *Raft) Start(command interface{}) (int32, int32, bool) {
 		//触发consensusCh的时候才会返回，否则会一直阻塞在这里
 		select {
 		case <- rf.consensusCh:
-			fmt.Printf("日志达成共识\n")
+			fmt.Printf("%s达成共识\n", newEntry.Command)
 			return index, term, isLeader
 		}
 	}
@@ -535,7 +535,7 @@ func (rf *Raft) beLeader() {
 		return
 	}
 	fmt.Println(rf.address, "---------------become LEADER--------------", rf.currentTerm)
-	fmt.Printf("选举用时：%dns\n", rf.electEnd-rf.electBegin)
+	fmt.Printf("选举用时：%dms\n", (rf.electEnd-rf.electBegin)/1e3)
 	rf.role = Leader
 	n := len(rf.members)
 	rf.nextIndex = make([]int32, n)
