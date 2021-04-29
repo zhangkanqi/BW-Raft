@@ -106,7 +106,7 @@ func main() {
 	members := strings.Split(*mems, ",")
 	persist := &PERSISTER.Persister{}
 
-	persist.Init("../db"+address+string(time.Now().Unix()))
+	persist.Init("../db"+address+time.Now().Format("20060102"))
 	sv := Server{
 		address: address,
 		members: members,
